@@ -100,6 +100,8 @@ This approach avoids the need to create an intermediary block_info object, and s
 import open3d as o3d
 import numpy as np
 import pandas as pd
+import random
+
 
 from BoundingBoxToLineSet import BoundingBoxToLineSet
 
@@ -139,28 +141,47 @@ class OctreeNode:
         self.bounding_box.color = color
         self.center = center
 
+    # The split method is responsible for dividing the current OctreeNode into 8 smaller
+    # children nodes, effectively dividing the 3D space that the node represents into
+    # 8 smaller cubes. This process is recursive.
+
     def split(self, max_depth):
+        # If the current depth of the node is less than the maximum allowed depth, we can continue to split.
         if self.depth < max_depth:
-            # Calculate new bounds
+            # Calculate the midpoint of the current node's bounding box.
             mid = (self.min_corner + self.max_corner) / 2
+            # Store the minimum corner, midpoint, and maximum corner.
             bounds = [self.min_corner, mid, self.max_corner]
 
-            # Recursively split into 8 children
+            # Iterate through the 8 potential children (2 for each dimension).
             for i in range(2):
                 for j in range(2):
                     for k in range(2):
+                        # Determine the minimum and maximum corners for the new child node.
                         new_min = [bounds[x][l] for x, l in zip([i, j, k], range(3))]
                         new_max = [bounds[x][l] for x, l in zip([i+1, j+1, k+1], range(3))]
-                        # Filter points within new bounds
+                        
+                        # The following code filters the points that are within the new bounds.
+                        # new_min <= self.points checks if each point is greater than or equal to the new minimum corner (elementwise).
+                        # self.points <= new_max checks if each point is less than or equal to the new maximum corner (elementwise).
+                        # in_range will be a boolean array that will be True for points within new bounds.
                         in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
+                        
+                        # Select the points that are within the new bounds.
                         new_points = self.points[in_range]
+                        # Select the attributes corresponding to the points within the new bounds.
                         new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
-                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]  # New line
-                        if len(new_points) > 0:
-                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)  # Modified line
-                            child.split(max_depth)
-                            self.children.append(child)
+                        # Select the block_ids corresponding to the points within the new bounds.
+                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
 
+                        # If there are points in the new child node, create the child node.
+                        if len(new_points) > 0:
+                            # Create the new child node.
+                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)
+                            # Recursively call split on the new child.
+                            child.split(max_depth)
+                            # Append the child to the current node's children list.
+                            self.children.append(child)
 
 
 class CustomOctree:
@@ -245,30 +266,56 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
     vis.get_view_control().set_lookat(octree.root.center)
     vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
 
+def load_and_translate_block_data(dataframe, tree_id, translation_range=10):
+    # Filter the data for the specific tree
+    block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
+    
+    # Apply a random translation on the horizontal plane (X, Y)
+    translation_x = random.uniform(-translation_range, translation_range)
+    translation_y = random.uniform(-translation_range, translation_range)
+    block_data['x'] += translation_x
+    block_data['y'] += translation_y
+    
+    return block_data
+
+
+# Load the point cloud data
 csv_file = 'data/branchPredictions - full.csv'
 data = pd.read_csv(csv_file)
-data['block_id'] = 'Tree ' + data['Tree.ID'].astype(str)  # New line
-tree13_data = data[data['Tree.ID'] == 13]
-tree13_data = tree13_data.rename(columns={'y': 'z', 'z': 'y'})
-points = tree13_data[['x', 'y', 'z']].to_numpy()
-attributes = tree13_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-block_ids = tree13_data['block_id'].tolist()  # New line
 
-center = np.mean(points, axis=0)
-max_depth = 5
+# Load and translate block data for Tree.ID == 13 and Tree.ID == 1
+block_data_13 = load_and_translate_block_data(data, 2)
+block_data_1 = load_and_translate_block_data(data, 1)
 
+# Combine the block data
+combined_data = pd.concat([block_data_13, block_data_1])
+
+print(combined_data)
+
+# Rename columns
+combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
+
+# Extract points, attributes, and block IDs
+points = combined_data[['x', 'y', 'z']].to_numpy()
+attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+block_ids = combined_data['Tree.ID'].tolist()
+
+# Compute min and max corners for the bounding box
 min_corner = np.min(points, axis=0)
 max_corner = np.max(points, axis=0)
+
+# Create Octree
+max_depth = 5
 octree = CustomOctree(min_corner, max_corner, points, attributes, block_ids, max_depth)
 
-#octree = CustomOctree(min_corner, max_corner, points, attributes, max_depth=max_depth)
-
-
+# Visualization
 vis = o3d.visualization.Visualizer()
 vis.create_window()
 
 def print_nodes(node, level=0):
     # Print the node information
+    
+
     print(f"Level: {level}, Block IDs: {node.block_ids}")
 
     # Recurse for each child
@@ -278,11 +325,9 @@ def print_nodes(node, level=0):
 # Call the function on the root of the Octree
 print_nodes(octree.root)
 
-
-#update_visualization(vis, octree, max_depth, 1, max_depth - 3)
+# Update visualization
 update_visualization(vis, octree, max_depth, 2, 3)
 
-
-
+# Run visualization
 vis.run()
 vis.destroy_window()
