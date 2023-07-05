@@ -182,52 +182,43 @@ def decrease_visualize_offset(vis, action, mods):
     visualize_offset[0] = max(0, visualize_offset[0] - 1)
     update_visualization(vis, octree, max_depth, visualize_offset[0])
 
-# Load data from CSV
-csv_file = 'data/branchPredictions - full.csv'
-data = pd.read_csv(csv_file)
 
-# Landscape size
-landscape_size = [100, 100]  # Size of landscape in meters
+def initialize_environment_from_csv(octree, csv_file):
+    # Read the CSV file using pandas
+    data = pd.read_csv(csv_file)
 
+    # Extract unique tree IDs
+    tree_ids = data['Tree.ID'].unique()
 
-# Get list of unique tree IDs
-tree_ids = data['Tree.ID'].unique()
+    # Loop through each unique tree ID
+    for tree_id in tree_ids:
+        # Filter data for the current tree_id
+        tree_data = data[data['Tree.ID'] == tree_id]
+        
+        # Extract tree size from the first row of filtered data
+        tree_size = tree_data.iloc[0]['Tree.size']
+        
+        # Randomly position the tree
+        offset_x, offset_y = random.uniform(0, octree.root.max_corner[0]), random.uniform(0, octree.root.max_corner[1])
+        
+        # Extract points and attributes
+        tree_points = tree_data[['x', 'y', 'z']].to_numpy() + np.array([offset_x, offset_y, 0])
+        tree_attributes = tree_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        
+        # Insert points into octree and associate them with the current block (tree_id)
+        for point, attribute in zip(tree_points, tree_attributes):
+            octree.insert_point(point, attribute, tree_id)
+        
+        # Assign block info to the octree
+        block_info = {'size': tree_size}
+        octree.add_block_info(tree_id, block_info)
 
-# Randomly distribute trees over the landscape
-points = []
-attributes = []
-for tree_id in tree_ids:
-    tree_data = data[data['Tree.ID'] == tree_id]
-    offset_x, offset_y = random.uniform(0, landscape_size[0]), random.uniform(0, landscape_size[1])
-    tree_points = tree_data[['x', 'y', 'z']].to_numpy() + np.array([offset_x, offset_y, 0])
-    tree_attributes = tree_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-    points.extend(tree_points)
-    attributes.extend(tree_attributes)
-
-# Convert lists to numpy arrays for use in octree
-points = np.array(points)
-
-# Create a grid of points for the ground
-ground_points = np.mgrid[0:100:1, 0:100:1].reshape(2,-1).T
-ground_points = np.concatenate([ground_points, np.zeros((ground_points.shape[0], 1))], axis=1)  # Set z=0 for all ground points
-
-# Create attributes for the ground points
-ground_attributes = [{'isDeadOnly': False, 'isLateralOnly': False, 'isBoth': False, 'isNeither': True} for _ in range(len(ground_points))]
-
-# Append ground points and attributes to your points and attributes numpy array
-points = np.concatenate([points, ground_points])
-attributes += ground_attributes
-
-
-# Build custom octree
-min_corner = [0, 0, 0]  # Minimum corner of landscape
-# max_corner of landscape
-max_corner = [100, 100, 100]
-
-#max_corner = landscape_size + [np.max(points[:, 2])]  # Maximum corner of landscape
+# Example Usage:
 max_depth = 7
-octree = CustomOctree(points, attributes, min_corner, max_corner, max_depth=max_depth)
-
+min_corner = [0, 0, 0]
+max_corner = [100, 100, 100]
+octree = CustomOctree(min_corner, max_corner, max_depth)
+initialize_environment_from_csv(octree, 'data/branchPredictions - full.csv')
 
 
 # Create visualizer
