@@ -85,6 +85,8 @@ you would iterate over the Blocks, and for each Block,
 you would iterate over its points and attributes to add them to the Octree. This way, each point is associated with its Block from the start, 
 and this association is maintained as the points are inserted into the Octree.'''
 
+"maintain the block_ids attribute as a set right from the beginning. The latter approach ensures that block_ids always contains unique elements and may be more efficient. Here's how you can modify the code to maintain the block_ids attribute as a set:"
+
 '''
 Here's the summary of the steps we've taken so far:
 
@@ -284,13 +286,12 @@ csv_file = 'data/branchPredictions - full.csv'
 data = pd.read_csv(csv_file)
 
 # Load and translate block data for Tree.ID == 13 and Tree.ID == 1
-block_data_13 = load_and_translate_block_data(data, 2)
+block_data_13 = load_and_translate_block_data(data, 13)
 block_data_1 = load_and_translate_block_data(data, 1)
 
 # Combine the block data
 combined_data = pd.concat([block_data_13, block_data_1])
 
-print(combined_data)
 
 # Rename columns
 combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
@@ -314,9 +315,16 @@ vis.create_window()
 
 def print_nodes(node, level=0):
     # Print the node information
-    
+    unique_block_ids = list(set(node.block_ids))
 
-    print(f"Level: {level}, Block IDs: {node.block_ids}")
+    #print(f"Level: {level}, Block IDs: {unique_block_ids}")
+
+
+    #print unique_block_ids if there are multiple
+    if len(unique_block_ids) > 1:
+        print(f"Level: {level}, Block IDs: {unique_block_ids}")
+
+
 
     # Recurse for each child
     for child in node.children:
