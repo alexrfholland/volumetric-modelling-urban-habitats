@@ -77,9 +77,24 @@ proposed path forward:
 3. Implement Node-Block Association during Insertion: Once we have the Block information storage in place, we can modify the node insertion process to associate nodes with the appropriate Block(s). We'll add the Block identifier(s) to the node's block_ids list during insertion. We can test this by inserting some nodes and checking if they're correctly associated with their respective Blocks.
 4. Implement Querying Functions: After the node-block association is working correctly, we'll implement functions that allow querying nodes and Blocks based on specific criteria, such as depth levels and Block identifiers. We can test these functions by running some queries and checking if they return the expected results.
 5. Implement Visualization Methods: Finally, we'll implement visualization methods to visualize Blocks within the Octree. We can test these methods by visualizing some Blocks and checking if they're displayed correctly.
+
+EXTRA INFO PER STEP:
+
+3.  associating each point with a block_id during insertion into the Octree is a good approach. 
+you would iterate over the Blocks, and for each Block, 
+you would iterate over its points and attributes to add them to the Octree. This way, each point is associated with its Block from the start, 
+and this association is maintained as the points are inserted into the Octree.'''
+
 '''
+Here's the summary of the steps we've taken so far:
+
+1.Modify the OctreeNode class to include a block_ids attribute: This attribute is a list that holds the block IDs associated with each node. It is initialized in the OctreeNode constructor and passed to the child nodes when the node splits.
+2.Add block information to the DataFrame: We added a new column block_id to the DataFrame to store the block ID for each point. The block ID is created by appending the Tree.ID to the string 'Tree '.
+3.Associate nodes with blocks during insertion: When inserting nodes into the Octree, they are associated with the appropriate block(s) by adding the block ID(s) to the node's block_ids list. This is done in the split method of the OctreeNode class, where the block_ids are filtered in the same way as the points and attributes and passed to the child nodes.
+This approach avoids the need to create an intermediary block_info object, and should be more efficient when dealing with large datasets. However, it does require that the data is initially loaded into a DataFrame, which may not be suitable for all use cases.
 
 
+'''
 
 
 import open3d as o3d
@@ -90,15 +105,18 @@ from BoundingBoxToLineSet import BoundingBoxToLineSet
 
 
 class OctreeNode:
-    def __init__(self, min_corner, max_corner, points, attributes, depth=0):
+    def __init__(self, min_corner, max_corner, points, attributes, block_ids, depth=0):  # Added block_ids parameter
         self.children = []  # child nodes
         self.depth = depth  # depth of this node in the tree
         self.min_corner = np.array(min_corner)  # minimum corner of bounding box
         self.max_corner = np.array(max_corner)  # maximum corner of bounding box
         self.points = points
         self.attributes = attributes
+        self.block_ids = block_ids  # New line
         self.dominant_attribute, self.dominant_color = self.calculate_dominant_attribute_and_color()
-        self.get_geos()  # Ensure bounding box and center are computed
+        self.get_geos() #ensure bounding box and center are computed
+
+
 
     def calculate_dominant_attribute_and_color(self):
         # Logic to determine color based on node's attributes
@@ -137,15 +155,17 @@ class OctreeNode:
                         in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
                         new_points = self.points[in_range]
                         new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
+                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]  # New line
                         if len(new_points) > 0:
-                            child = OctreeNode(new_min, new_max, new_points, new_attributes, self.depth + 1)
+                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)  # Modified line
                             child.split(max_depth)
                             self.children.append(child)
 
 
+
 class CustomOctree:
-    def __init__(self, min_corner, max_corner, points, attributes, max_depth):
-        self.root = OctreeNode(min_corner, max_corner, points, attributes)
+    def __init__(self, min_corner, max_corner, points, attributes, block_ids, max_depth):  # Added block_ids parameter
+        self.root = OctreeNode(min_corner, max_corner, points, attributes, block_ids)  # Added block_ids argument
         self.root.split(max_depth)
 
     @staticmethod
@@ -227,21 +247,37 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
 
 csv_file = 'data/branchPredictions - full.csv'
 data = pd.read_csv(csv_file)
+data['block_id'] = 'Tree ' + data['Tree.ID'].astype(str)  # New line
 tree13_data = data[data['Tree.ID'] == 13]
 tree13_data = tree13_data.rename(columns={'y': 'z', 'z': 'y'})
 points = tree13_data[['x', 'y', 'z']].to_numpy()
 attributes = tree13_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+block_ids = tree13_data['block_id'].tolist()  # New line
 
 center = np.mean(points, axis=0)
 max_depth = 5
 
 min_corner = np.min(points, axis=0)
 max_corner = np.max(points, axis=0)
-octree = CustomOctree(min_corner, max_corner, points, attributes, max_depth=max_depth)
+octree = CustomOctree(min_corner, max_corner, points, attributes, block_ids, max_depth)
+
+#octree = CustomOctree(min_corner, max_corner, points, attributes, max_depth=max_depth)
 
 
 vis = o3d.visualization.Visualizer()
 vis.create_window()
+
+def print_nodes(node, level=0):
+    # Print the node information
+    print(f"Level: {level}, Block IDs: {node.block_ids}")
+
+    # Recurse for each child
+    for child in node.children:
+        print_nodes(child, level + 1)
+
+# Call the function on the root of the Octree
+print_nodes(octree.root)
+
 
 #update_visualization(vis, octree, max_depth, 1, max_depth - 3)
 update_visualization(vis, octree, max_depth, 2, 3)
