@@ -41,7 +41,7 @@ import numpy as np
 from colorMaps import Colormap  # replace 'colormap_module' with the actual name of your colormap python file
 
 def enhance_colors_with_illuminance(colors, illuminance):
-    return colors * illuminance[:, np.newaxis]**3
+    return colors * illuminance[:, np.newaxis]**5
 
 def assign_horizontality(dip_degrees):
     horizontality = np.empty_like(dip_degrees, dtype=int)
@@ -102,7 +102,7 @@ data = data[data['category'] != -1]
 
 # Create a colormap for visualization
 cm = Colormap()
-colormap_name = 'batlowS'  
+colormap_name = 'glasgowS'  
 
 # Get and shuffle colors
 category_colors = get_and_shuffle_colors(cm, queries, colormap_name)
