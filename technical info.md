@@ -2,7 +2,9 @@
 # Save this as class.py
 
 """[PROMPT]
-The code provided is intended for 3D volumetric modeling of urban environments using an Octree data structure. The goal is to build a detailed representation of urban spaces by grouping Octree nodes into logical sets called Blocks, such as Tree Blocks, Building Blocks, and Artificial Habitat Blocks. Each Block represents a specific object or area within the environment.
+The code provided is intended for 3D volumetric modeling of urban environments using an Octree data structure. 
+The goal is to build a detailed representation of urban spaces by grouping Octree nodes into logical sets called Blocks, 
+such as Tree Blocks, Building Blocks, and Artificial Habitat Blocks. Each Block represents a specific object or area within the environment.
 
 The key components are:
 - OctreeNode class: Represents individual nodes in the Octree.

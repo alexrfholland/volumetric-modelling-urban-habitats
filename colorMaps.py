@@ -3,7 +3,7 @@ import json
 import numpy as np
 from scipy.interpolate import interp1d
 
-
+#NOTE THE S VERSIONS ARE CATAGOERICAL, THE NON S VERSIONS ARE CONTINUOUS
 class Colormap:
     def __init__(self, json_file_path=None):
         if json_file_path is None:
