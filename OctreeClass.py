@@ -80,7 +80,7 @@ proposed path forward:
 
 EXTRA INFO PER STEP:
 
-3.  associating each point with a block_id during insertion into the Octree is a good approach. 
+STEP 3.  associating each point with a block_id during insertion into the Octree is a good approach. 
 you would iterate over the Blocks, and for each Block, 
 you would iterate over its points and attributes to add them to the Octree. This way, each point is associated with its Block from the start, 
 and this association is maintained as the points are inserted into the Octree.'''
@@ -94,6 +94,14 @@ Here's the summary of the steps we've taken so far:
 2.Add block information to the DataFrame: We added a new column block_id to the DataFrame to store the block ID for each point. The block ID is created by appending the Tree.ID to the string 'Tree '.
 3.Associate nodes with blocks during insertion: When inserting nodes into the Octree, they are associated with the appropriate block(s) by adding the block ID(s) to the node's block_ids list. This is done in the split method of the OctreeNode class, where the block_ids are filtered in the same way as the points and attributes and passed to the child nodes.
 This approach avoids the need to create an intermediary block_info object, and should be more efficient when dealing with large datasets. However, it does require that the data is initially loaded into a DataFrame, which may not be suitable for all use cases.
+
+###
+
+STEP 4 and 5: implement a query function and visualise bounding boxes
+#
+1. Implement a query function to retrieve non-leaf nodes with bounding boxes that have only one unique block ID.
+2. Implement a function to assign colors to the bounding boxes based on block ownership.
+3. Visualize the octree with the colored bounding boxes.
 
 
 '''
@@ -245,10 +253,75 @@ class CustomOctree:
         voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size)
 
         return voxel_grid, bounding_boxes
+    
+    def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes):
+        # Base case: if node is None, return
+        if node is None:
+            return
+        
+        # If it's a non-leaf node
+        if node.children:
+            # If it has only one unique block ID
+            if len(set(node.block_ids)) == 1:
+                single_block_nodes.append(node)
+            # If it has multiple block IDs
+            elif len(set(node.block_ids)) > 1:
+                multiple_block_nodes.append(node)
+            
+        # Recurse for children
+        for child in node.children:
+            self.sort_nodes_by_ownership(child, single_block_nodes, multiple_block_nodes)
 
-
+    @staticmethod
+    def get_color_based_on_block_id(block_id):
+        # Map block IDs to colors
+        # Example: assigning colors based on block_id
+        color_mapping = {13: [1, 0, 0],  # Red for block_id 13
+                         1: [0, 1, 0]}  # Green for block_id 1
+        return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
 
 def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
+    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
+    
+    view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
+    
+    vis.clear_geometries()
+    vis.add_geometry(voxel_grid)
+
+    # Fetching nodes sorted by ownership
+    single_block_nodes = []
+    multiple_block_nodes = []
+    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes)
+
+    # Create line sets for bounding boxes with corresponding colors for single block nodes
+    linesets = []
+    for node in single_block_nodes:
+        # Convert bounding box to LineSet
+        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
+        # Set colors of LineSet
+        color = CustomOctree.get_color_based_on_block_id(list(set(node.block_ids))[0])
+        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
+        linesets.append(lineset)
+    
+    # Create line sets for bounding boxes with a different color for multiple block nodes
+    for node in multiple_block_nodes:
+        # Convert bounding box to LineSet
+        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
+        # Set colors of LineSet
+        color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
+        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
+        linesets.append(lineset)
+
+    # Adding linesets to the visualizer
+    for lineset in linesets:
+        vis.add_geometry(lineset)
+
+    vis.get_view_control().set_lookat(octree.root.center)
+    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
+
+
+
+"""def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
     voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
 
     view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
@@ -266,7 +339,7 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
         vis.add_geometry(lineset_info['geometry'])
 
     vis.get_view_control().set_lookat(octree.root.center)
-    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
+    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)"""
 
 def load_and_translate_block_data(dataframe, tree_id, translation_range=10):
     # Filter the data for the specific tree
