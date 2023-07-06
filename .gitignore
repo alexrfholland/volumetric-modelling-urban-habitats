@@ -100,3 +100,4 @@ celerybeat.pid
 # SageMath
 myvenv/
 data/
+colormaps/

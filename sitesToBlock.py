@@ -39,40 +39,34 @@ import open3d as o3d
 import pandas as pd
 import numpy as np
 
+from colorMaps import Colormap  # replace 'colormap_module' with the actual name of your colormap python file
+
+
 def enhance_colors_with_illuminance(colors, illuminance):
-    return colors * illuminance[:, np.newaxis]
+    return colors * illuminance[:, np.newaxis]**3
 
 def assign_horizontality(dip_degrees):
     horizontality = np.empty_like(dip_degrees, dtype=int)
     horizontality[dip_degrees < 6] = 0  # flat
-    horizontality[dip_degrees > 85] = 2  # vertical
-    horizontality[(dip_degrees >= 6) & (dip_degrees <= 85)] = 1  # angled
+    horizontality[(dip_degrees >= 6) & (dip_degrees < 85)] = 1  # angled
+    horizontality[dip_degrees >= 85] = 2  # vertical
     return horizontality
 
-def further_processing(data):
-    # Assign horizontality based on Dip (degrees)
-    data['horizontality'] = assign_horizontality(data['Dip (degrees)'].values)
-    return data
-
-def categorize_points(data, queries):
+def classify_points_based_on_queries(data, queries):
     category = np.zeros(len(data), dtype=int)
     for i, query in enumerate(queries):
-        mask = data.query(query).index
-        category[mask] = i + 1
-    data['category'] = category
-    return data
+        filtered_indices = data.query(query).index
+        category[filtered_indices] = i + 1
+    return category
 
-# Read data
+# Load Data
 data = pd.read_parquet('data/sites/park.parquet')
 data.rename(columns={'//X': 'X'}, inplace=True)
 
-print(data.columns)
-
-
-# Further processing to assign horizontality
-data = further_processing(data)
-
-# Queries for categorization
+# Assign horizontality
+data['horizontality'] = assign_horizontality(data['Dip (degrees)'].values)
+"""
+# Queries
 queries = [
     "element_type == 0",
     "element_type == 1 and horizontality == 0",
@@ -81,10 +75,22 @@ queries = [
     "element_type == 2",
     "element_type == 3",
     "element_type == 4"
+]"""
+
+
+# Queries
+queries = [
+    "element_type == 1 and horizontality == 0",
+    "element_type == 1 and horizontality == 1",
+    "element_type == 1 and horizontality == 2",
+    "element_type == 2",
+    "element_type == 3",
+    "element_type == 4"
 ]
 
-# Categorize points based on queries
-data = categorize_points(data, queries)
+
+# Classify Points
+data['category'] = classify_points_based_on_queries(data, queries)
 
 # Create a colormap for visualization
 category_colors = [
@@ -98,12 +104,47 @@ category_colors = [
 ]
 
 # Assign colors based on category
+#colors = np.array([category_colors[cat-1] for cat in data['category']])
+
+# Create an instance of Colormap class
+cm = Colormap()
+
+# Specify the colormap name
+colormap_name = 'batlowS'  # replace 'your_colormap_name' with the actual name of your colormap
+
+import random
+
+# Get the colors from the colormap and shuffle them
+category_colors = cm.get_categorical_colors(len(queries) + 1, colormap_name)
+#random.shuffle(category_colors)
+category_colors.pop(0)
+
+# Assign colors based on category
 colors = np.array([category_colors[cat-1] for cat in data['category']])
 
-# Create point cloud
+illuminance = np.array(data['Illuminance (PCV)'])
+enhanced_colors = enhance_colors_with_illuminance(colors, illuminance)
+
+
+# Convert DataFrame to Open3D PointCloud
 pcd = o3d.geometry.PointCloud()
 pcd.points = o3d.utility.Vector3dVector(data[['X', 'Y', 'Z']].values)
-pcd.colors = o3d.utility.Vector3dVector(colors)
+pcd.colors = o3d.utility.Vector3dVector(enhanced_colors)
 
-# Visualization
-o3d.visualization.draw_geometries([pcd])
+# Convert PointCloud to VoxelGrid
+voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=1.0)
+
+# Create a visualizer object
+vis = o3d.visualization.Visualizer()
+vis.create_window()
+
+# Add the geometry to the visualizer
+vis.add_geometry(voxel_grid)
+
+# Change view parameters if needed (you can adjust these values)
+view_control = vis.get_view_control()
+view_control.set_zoom(0.8)
+
+# Run the visualizer
+vis.run()
+
