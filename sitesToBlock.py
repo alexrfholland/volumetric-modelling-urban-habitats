@@ -34,13 +34,11 @@ Step 4: Color Enhancement - Define a function that takes the original colors and
 Step 5: Visualization - Visualize the point cloud using Open3D, incorporating color enhancement and displaying different colors based on the 'category' attribute assigned in Step 3.
 
 """
-
 import open3d as o3d
 import pandas as pd
 import numpy as np
 
 from colorMaps import Colormap  # replace 'colormap_module' with the actual name of your colormap python file
-
 
 def enhance_colors_with_illuminance(colors, illuminance):
     return colors * illuminance[:, np.newaxis]**3
@@ -52,12 +50,32 @@ def assign_horizontality(dip_degrees):
     horizontality[dip_degrees >= 85] = 2  # vertical
     return horizontality
 
-def classify_points_based_on_queries(data, queries):
-    category = np.zeros(len(data), dtype=int)
+def create_category_mapping(data, queries):
+    category = np.full(len(data), -1, dtype=int)  # default to -1
     for i, query in enumerate(queries):
         filtered_indices = data.query(query).index
         category[filtered_indices] = i + 1
     return category
+
+
+def get_and_shuffle_colors(cm, queries, colormap_name):
+    category_colors = cm.get_categorical_colors(len(queries) + 1, colormap_name)
+    category_colors.pop(0)
+    return category_colors
+
+def assign_colors_based_on_category(data, category_colors):
+    colors = np.array([category_colors[cat-1] for cat in data['category']])
+    return colors
+
+def enhance_colors(colors, illuminance):
+    enhanced_colors = enhance_colors_with_illuminance(colors, illuminance)
+    return enhanced_colors
+
+def convert_to_point_cloud(data, colors):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(data[['X', 'Y', 'Z']].values)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    return pcd
 
 # Load Data
 data = pd.read_parquet('data/sites/park.parquet')
@@ -65,18 +83,6 @@ data.rename(columns={'//X': 'X'}, inplace=True)
 
 # Assign horizontality
 data['horizontality'] = assign_horizontality(data['Dip (degrees)'].values)
-"""
-# Queries
-queries = [
-    "element_type == 0",
-    "element_type == 1 and horizontality == 0",
-    "element_type == 1 and horizontality == 1",
-    "element_type == 1 and horizontality == 2",
-    "element_type == 2",
-    "element_type == 3",
-    "element_type == 4"
-]"""
-
 
 # Queries
 queries = [
@@ -88,48 +94,28 @@ queries = [
     "element_type == 4"
 ]
 
+# Create category mapping
+data['category'] = create_category_mapping(data, queries)
 
-# Classify Points
-data['category'] = classify_points_based_on_queries(data, queries)
+# Filter out uncategorized points
+data = data[data['category'] != -1]
 
 # Create a colormap for visualization
-category_colors = [
-    [1, 0, 0],  # red
-    [0, 1, 0],  # green
-    [0, 0, 1],  # blue
-    [1, 1, 0],  # yellow
-    [1, 0, 1],  # magenta
-    [0, 1, 1],  # cyan
-    [0.5, 0.5, 0.5]  # grey
-]
-
-# Assign colors based on category
-#colors = np.array([category_colors[cat-1] for cat in data['category']])
-
-# Create an instance of Colormap class
 cm = Colormap()
+colormap_name = 'batlowS'  
 
-# Specify the colormap name
-colormap_name = 'batlowS'  # replace 'your_colormap_name' with the actual name of your colormap
-
-import random
-
-# Get the colors from the colormap and shuffle them
-category_colors = cm.get_categorical_colors(len(queries) + 1, colormap_name)
-#random.shuffle(category_colors)
-category_colors.pop(0)
+# Get and shuffle colors
+category_colors = get_and_shuffle_colors(cm, queries, colormap_name)
 
 # Assign colors based on category
-colors = np.array([category_colors[cat-1] for cat in data['category']])
+colors = assign_colors_based_on_category(data, category_colors)
 
+# Enhance colors with illuminance
 illuminance = np.array(data['Illuminance (PCV)'])
-enhanced_colors = enhance_colors_with_illuminance(colors, illuminance)
+enhanced_colors = enhance_colors(colors, illuminance)
 
-
-# Convert DataFrame to Open3D PointCloud
-pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(data[['X', 'Y', 'Z']].values)
-pcd.colors = o3d.utility.Vector3dVector(enhanced_colors)
+# Convert to point cloud
+pcd = convert_to_point_cloud(data, enhanced_colors)
 
 # Convert PointCloud to VoxelGrid
 voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=1.0)
@@ -144,7 +130,9 @@ vis.add_geometry(voxel_grid)
 # Change view parameters if needed (you can adjust these values)
 view_control = vis.get_view_control()
 view_control.set_zoom(0.8)
+view_control.set_front([-0.5, -0.5, -0.5])
+view_control.set_lookat([2, 2, 2])
+view_control.set_up([0, 0, 1])
 
-# Run the visualizer
-vis.run()
-
+# Begin the visualization
+o3d.visualization.draw_geometries([voxel_grid])
