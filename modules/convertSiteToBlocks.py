@@ -1,7 +1,11 @@
 import open3d as o3d
 import pandas as pd
 import numpy as np
-from colorMaps import Colormap
+
+try:
+    from .colorMaps import Colormap  # Attempt a relative import
+except ImportError:
+    from colorMaps import Colormap  # Fall back to an absolute import
 
 def enhance_colors_with_illuminance(colors, illuminance):
     return colors * illuminance[:, np.newaxis] ** 5
@@ -42,7 +46,7 @@ def convert_to_point_cloud(data, colors):
 
 def process_lidar_data(filepath, colormap_name='glasgowS'):
     """
-    Returns a dataframe with the columns being X, Y, Z, r, g, b, blockID, and the attributes,
+    Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
     with one per column. Rows are the points.
     
     Parameters:
@@ -55,6 +59,7 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
         
     # Load Data
     data = pd.read_parquet(filepath)
+    print(data)
     data.rename(columns={'//X': 'X'}, inplace=True)
     
     # Assign horizontality
@@ -62,6 +67,7 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     
     # Queries
     queries = [
+        "element_type == 0",
         "element_type == 1 and horizontality == 0",
         "element_type == 1 and horizontality == 1",
         "element_type == 1 and horizontality == 2",
@@ -98,6 +104,8 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     
     # Order columns
     ordered_columns = ['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID'] + list(attributes_columns)
+    ordered_columns = ['X', 'Y', 'Z', 'blockID', 'r', 'g', 'b'] + list(attributes_columns)
+
     result = data[ordered_columns]
     
     # Return the DataFrame
@@ -149,6 +157,7 @@ if __name__ == "__main__":
 
     # Process the lidar data
     processed_data = process_lidar_data(filepath)
+    print(processed_data)
 
     # Convert the processed data to a VoxelGrid and visualize it
-    convertToVoxelGrid(processed_data)
+    #convertToVoxelGrid(processed_data)

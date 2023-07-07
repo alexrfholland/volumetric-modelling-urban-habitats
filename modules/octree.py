@@ -114,8 +114,10 @@ import numpy as np
 import pandas as pd
 import random
 
-
-from boxlineset import BoundingBoxToLineSet
+try:
+    from .boxlineset import BoundingBoxToLineSet  # Attempt a relative import
+except ImportError:
+    from boxlineset import BoundingBoxToLineSet  # Fall back to an absolute import
 
 
 class OctreeNode:
@@ -140,15 +142,16 @@ class OctreeNode:
 
     def calculate_dominant_attribute_and_color(self):
         # Logic to determine color based on node's attributes
-        counts = {"isDeadOnly": 0, "isLateralOnly": 0, "isBoth": 0, "isNeither": 0}
-        for attributes in self.attributes:
-            for key in counts:
-                if attributes[key]:
-                    counts[key] += 1
-                    break
-        max_count_attr = max(counts, key=counts.get)
-        color = CustomOctree.get_color_based_on_attribute(max_count_attr)
-        return max_count_attr, color 
+        return ('isDeadOnly', [1, 0, 0])
+        """"        counts = {"isDeadOnly": 0, "isLateralOnly": 0, "isBoth": 0, "isNeither": 0}
+                for attributes in self.attributes:
+                    for key in counts:
+                        if attributes[key]:
+                            counts[key] += 1
+                            break
+                max_count_attr = max(counts, key=counts.get)
+                color = CustomOctree.get_color_based_on_attribute(max_count_attr)
+                return max_count_attr, color """
 
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
@@ -203,9 +206,25 @@ class OctreeNode:
 
 
 class CustomOctree:
-    def __init__(self, min_corner, max_corner, points, attributes, block_ids, max_depth):  # Added block_ids parameter
+    def __init__(self, points, attributes, block_ids, max_depth):  # Added block_ids parameter
+        # Compute min and max corners for the bounding box
+        #min_corner = np.min(points, axis=0)
+        #max_corner = np.max(points, axis=0)
+
+        min_corner, max_corner = self.fit_cube_bbox(points)
+
         self.root = OctreeNode(min_corner, max_corner, points, attributes, block_ids)  # Added block_ids argument
         self.root.split(max_depth)
+
+    def fit_cube_bbox(self, points):
+        min_corner = np.min(points, axis=0)
+        max_corner = np.max(points, axis=0)
+
+        length = max(max_corner - min_corner)
+
+        max_corner += length - (max_corner - min_corner)
+
+        return min_corner, max_corner
 
     @staticmethod
     def get_color_based_on_attribute(attribute):
@@ -262,7 +281,7 @@ class CustomOctree:
 
         return voxel_grid, bounding_boxes
     
-    def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes):
+    #def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes):
         # Base case: if node is None, return
         if node is None:
             return
@@ -280,6 +299,27 @@ class CustomOctree:
         for child in node.children:
             self.sort_nodes_by_ownership(child, single_block_nodes, multiple_block_nodes)
 
+    def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level):
+        # Base case: if node is None, return
+        if node is None:
+            return
+        
+        # Check if the current depth is within the specified range
+        if min_offset_level <= node.depth <= max_offset_level:
+            # If it's a non-leaf node
+            if node.children:
+                # If it has only one unique block ID
+                if len(set(node.block_ids)) == 1:
+                    single_block_nodes.append(node)
+                # If it has multiple block IDs
+                elif len(set(node.block_ids)) > 1:
+                    multiple_block_nodes.append(node)
+        
+        # Recurse for children
+        for child in node.children:
+            self.sort_nodes_by_ownership(child, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
+
+
     @staticmethod
     def get_color_based_on_block_id(block_id):
         # Map block IDs to colors
@@ -287,6 +327,7 @@ class CustomOctree:
         color_mapping = {13: [1, 0, 0],  # Red for block_id 13
                          1: [0, 1, 0]}  # Green for block_id 1
         return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
+
 
 def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
 
@@ -307,7 +348,7 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
     # Fetching nodes sorted by ownership
     single_block_nodes = []
     multiple_block_nodes = []
-    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes)
+    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
 
     # Create a list of all unique block IDs
     unique_block_ids = list(set(octree.root.block_ids))
@@ -315,8 +356,10 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
     # Generate a color for each unique block ID
     color_mapping = generate_colors(unique_block_ids)
 
-    # Create line sets for bounding boxes with corresponding colors for single block nodes
+    #Create line sets for bounding boxes with corresponding colors for single block nodes
     linesets = []
+
+    
     for node in single_block_nodes:
         # Convert bounding box to LineSet
         lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
@@ -347,6 +390,14 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
 
 
 def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_level):
+
+    def generate_colors(unique_block_ids):
+        color_mapping = {}
+        for block_id in unique_block_ids:
+            color_mapping[block_id] = [random.random(), random.random(), random.random()]
+        return color_mapping
+
+
     voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
     
     view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
@@ -357,17 +408,52 @@ def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_l
     # Fetching nodes sorted by ownership
     single_block_nodes = []
     multiple_block_nodes = []
-    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes)
+    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
+
+    # Create a list of all unique block IDs
+    unique_block_ids = list(set(octree.root.block_ids))
+
+    # Generate a color for each unique block ID
+    color_mapping = generate_colors(unique_block_ids)
 
     # Create line sets for bounding boxes with corresponding colors for single block nodes
+    boundingboxes = []
+
+    for node in single_block_nodes:
+        box = node.bounding_box
+        unique_node_block_ids = list(set(node.block_ids))
+        if len(unique_node_block_ids) > 1:
+            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
+        else:
+            color = color_mapping[unique_node_block_ids[0]]
+            box.color = color
+            boundingboxes.append(box)
+    
+    # Create line sets for bounding boxes with a different color for multiple block nodes
+    for node in multiple_block_nodes:
+        box = node.bounding_box
+        box.color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
+        boundingboxes.append(box)
+
+    for box in boundingboxes:
+        vis.add_geometry(box)
+    
+    """
+    # Create line sets for bounding boxes with corresponding colors for single block nodes
     linesets = []
+
+    
     for node in single_block_nodes:
         # Convert bounding box to LineSet
         lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
         # Set colors of LineSet
-        color = CustomOctree.get_color_based_on_block_id(list(set(node.block_ids))[0])
-        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
-        linesets.append(lineset)
+        unique_node_block_ids = list(set(node.block_ids))
+        if len(unique_node_block_ids) > 1:
+            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
+        else:
+            color = color_mapping[unique_node_block_ids[0]]
+            lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
+            linesets.append(lineset)
     
     # Create line sets for bounding boxes with a different color for multiple block nodes
     for node in multiple_block_nodes:
@@ -380,11 +466,10 @@ def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_l
 
     # Adding linesets to the visualizer
     for lineset in linesets:
-        vis.add_geometry(lineset)
+        vis.add_geometry(lineset)"""
 
     vis.get_view_control().set_lookat(octree.root.center)
     vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
-
 
 
 
@@ -433,9 +518,7 @@ def tree_block_processing(tree_count):
 
 
     csv_file = 'data/branchPredictions - full.csv'
-    if not os.path.exists(csv_file):
-        print(f"Error: File not found - {csv_file}")
-        return
+
 
     data = pd.read_csv(csv_file)
     print(f"Loaded data with shape {data.shape}")
@@ -465,48 +548,36 @@ def tree_block_processing(tree_count):
 
 
 
-
-import os
-import pandas as pd
-import numpy as np
-
 def main():
-    try:
-        # Process tree block data for a specified number of trees
-        tree_count = 2  # Specify the number of tree blocks to process
-        tree_block_data = tree_block_processing(tree_count)
+
+    # Process tree block data for a specified number of trees
+    tree_count = 2  # Specify the number of tree blocks to process
+    tree_block_data = tree_block_processing(tree_count)
 
 
 
-        if tree_block_data is None:
-            print("Error: Tree block processing failed.")
-            return
-        
-        points, attributes, block_ids = tree_block_data
+    if tree_block_data is None:
+        print("Error: Tree block processing failed.")
+        return
+    
+    points, attributes, block_ids = tree_block_data
 
-        # Compute min and max corners for the bounding box
-        min_corner = np.min(points, axis=0)
-        max_corner = np.max(points, axis=0)
 
-        # Create Octree
-        max_depth = 5
-        octree = CustomOctree(min_corner, max_corner, points, attributes, block_ids, max_depth)
-        print(f"Created Octree with max depth {max_depth}")
+    # Create Octree
+    max_depth = 7
+    octree = CustomOctree(points, attributes, block_ids, max_depth)
+    print(f"Created Octree with max depth {max_depth}")
 
-        # Visualization
-        vis = o3d.visualization.Visualizer()
-        vis.create_window()
+    # Visualization
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
 
-        # Update visualization
-        update_visualization(vis, octree, max_depth, 2, 3)
+    # Update visualization
+    update_visualization(vis, octree, max_depth, 2, 3)
 
-        # Run visualization
-        vis.run()
-        vis.destroy_window()
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
+    # Run visualization
+    vis.run()
+    vis.destroy_window()
 
 if __name__ == "__main__":
     main()

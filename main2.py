@@ -1,9 +1,15 @@
+#
+
 """
+The code provided is intended for 3D volumetric modeling of urban environments using an Octree data structure. The goal is to build a detailed representation of urban spaces by grouping Octree nodes into logical sets called Blocks, such as Tree Blocks, Building Blocks, and Artificial Habitat Blocks. Each Block represents a specific object or area within the environment.
+
+
 Step 1: Initialize Main Script and Load Libraries
-    - Aim: Create a main script and ensure all necessary libraries and dependencies are imported.
+
 
 Step 2: Load Site Data
     - Aim: Utilize `siteToBlocks.py` to import the LiDAR scan data of the urban environment. Process the data as needed for it to be inserted into the Octree structure.
+    The octree expects a DataFrame with x, y, z, r, g, b, attributes [multiple of these], and blockIDs
 
 Step 3: Initialize Custom Octree
     - Aim: Create an instance of the CustomOctree class. Initialize it with a root node covering the spatial bounds of the entire dataset. Also, initialize an empty dictionary for storing block information.
@@ -40,99 +46,58 @@ import sys
 # === Third Party Imports ===
 import open3d as o3d
 import pandas as pd
-
+import numpy as np
 
 
 from modules.convertSiteToBlocks import process_lidar_data
-#from modules.octree import CustomOctree
+import modules.octree as Octree
 
 # File path to the LiDAR data
 file_path = 'data/sites/park.parquet'
 
-# Process the LiDAR data
-point_cloud = process_lidar_data(file_path)
-
-
+# Convert the LiDAR data to a Pandas DataFrame ready for insertion into the Octree
+# Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
+lidar_dataframe = process_lidar_data(file_path)
 
 # Parameters for the octree
-max_depth = 4  # Maximum depth of the Octree
-threshold = 0.5  # Threshold for splitting the Octree
+max_depth = 7  # Maximum depth of the Octree
 
-# Create the custom Octree
-custom_octree = CustomOctree(point_cloud, max_depth, threshold)
+print('from main..')
+print(lidar_dataframe)
+# Get the index of the 'blockId' column
+blockId_index = lidar_dataframe.columns.get_loc('blockID')
 
-# Visualize the Octree
-custom_octree.visualize()
+# Extract all columns after 'blockId'
+attribute_cols = lidar_dataframe.columns[blockId_index+1:]
 
+# Now you can extract your points, attributes, and block IDs
+lidar_points = lidar_dataframe[['X', 'Y', 'Z']].to_numpy()
+lidar_block_ids = lidar_dataframe['blockID'].tolist()
+lidar_attributes = lidar_dataframe[attribute_cols].to_dict('records')
 
+# Process tree block data for a specified number of trees
+tree_count = 2  # Specify the number of tree blocks to process
+tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing(tree_count)
 
+# Combine LiDAR and tree block data
+combined_points = np.concatenate([lidar_points, tree_points])
+combined_attributes = lidar_attributes + tree_attributes
+combined_block_ids = lidar_block_ids + tree_block_ids
 
+# Create Octree
+print(lidar_points)
+#octree = Octree.CustomOctree(lidar_points, lidar_attributes, lidar_block_ids, max_depth)
+octree = Octree.CustomOctree(combined_points, combined_attributes, combined_block_ids, max_depth)
+print(f"Created Octree with max depth {max_depth}")
 
+# Visualization
+vis = o3d.visualization.Visualizer()
+vis.create_window()
 
+# Update visualization
+Octree.update_visualization(vis, octree, max_depth, 5, 7)
 
-# === Constants and Configurations ===
-# Define any constants or configurations here
-# For example: DATA_PATH = "path/to/data"
+# Run visualization
+vis.run()
+vis.destroy_window()
 
-# === Functions ===
-# Define any additional helper functions here
-
-def load_libraries():
-    """
-    Load and initialize necessary libraries.
-    """
-    pass  # Implementation here
-
-def initialize_octree(site_data):
-    """
-    Initialize the Octree structure.
-    
-    :param site_data: The data loaded from siteToBlocks.py
-    """
-    pass  # Implementation here
-
-def insert_site_data_to_octree(octree, site_data):
-    """
-    Insert the site data into the Octree.
-    
-    :param octree: The Octree structure
-    :param site_data: The data loaded from siteToBlocks.py
-    """
-    pass  # Implementation here
-
-# ... Additional function definitions here ...
-
-# === Main Function ===
-def main():
-    """
-    The main function to execute the steps of the project.
-    """
-
-    # Step 1: Initialize and Load Libraries
-    # - Call load_libraries function
-    # - ...
-
-    # Step 2: Load Site Data
-    # - Use the load_site_data function from siteToBlocks.py
-
-    # Step 3: Initialize Custom Octree
-    # - Call initialize_octree function
-
-    # Step 4: Insert Site Data into Octree as Blocks
-    # - Call insert_site_data_to_octree function
-
-    # Step 5: Further Processing of Blocks (Tree Blocks)
-    # ...
-
-    # Step 6: Voxelization of Octree
-    # ...
-
-    # Step 7: Generate Bounding Boxes for Visualization
-    # ...
-
-    # Step 8: Visualize Octree and Blocks
-    # ...
-
-# === Script Execution ===
-if __name__ == "__main__":
-    main()
