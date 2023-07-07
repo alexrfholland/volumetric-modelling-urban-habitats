@@ -1,3 +1,40 @@
+"""
+CHAT GPT PLEASE READ
+
+We aim to construct a 3D volumetric model of urban environments using an Octree data structure. 
+
+Initially, we perform a large-scale spatial analysis to pinpoint characteristic sites and challenges, and to unveil opportunities for interventions.
+
+We then select representative sites from these categories for detailed study, using aerial LiDAR to capture volumetric data. 
+
+Our platform convert these lidar scans into numerical descriptions of urban spaces using an Octree data structure. 
+We aggregate Octree nodes into logical sets named Blocks, such as Tree Blocks, Building Blocks, and Artificial Habitat Blocks,
+where each Block signifies a specific object or area within the environment.
+
+For the broader urban environment, we dissect these sites into distinct 'Building Blocks,' 
+which encompass the ground, buildings, trees, street furniture, and other features.
+Within buildings, we conduct a nuanced analysis to identify walls and roofs that offer high potential for the addition of artificial structures, such as habitat roofs. 
+
+
+Data Description:
+The data is from an aerial LiDAR scan of an urban street and park, consisting of around 150,000 points in a 100x100x sample.
+The data will be saved in a PLY file.
+Each point has the following attributes: X, Y, Z (positions), Rf, Gf, Bf (colors in the range 0-1), Illuminance_(PCV) (shading information, grayscale, range 0-1), element_type (integers: 0 for 'tree', 1 for 'building', 2 for 'grass', 3 for 'street-furniture', 4 for 'ground'), Composite, Dip_(degrees), Dip_direction_(degrees), R, G, B, Nx, Ny, Nz.
+
+Key Steps and Elements of the Code:
+
+Step 1: Data Import - Use Open3D to import the PLY file.
+
+Step 2: further_processing - Use the Dip_(degrees) information to classify points based on the horizontality: 'flat', 'angled', or 'vertical'.
+
+Step 3: Build Query Structure - Create a function to categorize points based on combinations of attributes, for example, "element_type == 1 and horizontality == 1". This function will assign a new attribute called 'category' to each point, based on the combination of attributes specified in the query.
+
+Step 4: Color Enhancement - Define a function that takes the original colors and enhances them using the Illuminance_(PCV) information.
+
+Step 5: Visualization - Visualize the point cloud using Open3D, incorporating color enhancement and displaying different colors based on the 'category' attribute assigned in Step 3.
+
+"""
+
 import open3d as o3d
 import pandas as pd
 import numpy as np
@@ -67,12 +104,12 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     
     # Queries
     queries = [
-        "element_type == 0",
-        "element_type == 1 and horizontality == 0",
-        "element_type == 1 and horizontality == 1",
-        "element_type == 1 and horizontality == 2",
+        #"element_type == 0",
+        #"element_type == 1 and horizontality == 0",
+        #"element_type == 1 and horizontality == 1",
+        #"element_type == 1 and horizontality == 2",
         "element_type == 2",
-        "element_type == 3",
+        #"element_type == 3",
         "element_type == 4"
     ]
     
@@ -110,6 +147,37 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     
     # Return the DataFrame
     return result
+
+def select_random_ground_points(processed_data, n_points):
+    """
+    Randomly selects n number of points with element_type = 2 (ground) and returns their X, Y, Z coordinates.
+
+    Parameters:
+        processed_data (pandas.DataFrame): The DataFrame containing processed LiDAR data.
+        n_points (int): The number of random points to select.
+
+    Returns:
+        pandas.DataFrame: A DataFrame with X, Y, Z coordinates of the randomly selected ground points.
+    """
+    # Selecting points where element_type = 2 (ground)
+    #ground_points = processed_data[processed_data['element_type'] == 2]
+
+    ground_points = processed_data
+    print('printing ground points')
+    print(ground_points)
+    # Randomly select n_points from ground_points
+    selected_points = ground_points.sample(n_points)
+
+    selected_coords = selected_points[['X', 'Y', 'Z']]
+
+    coordinates_list_as_tuples = [tuple(x) for x in selected_coords.values]
+
+
+    #print(f'Selected {n_points} random points {selected_coords}')
+
+    # Return the X, Y, Z coordinates
+    return coordinates_list_as_tuples
+
 
 
 def convertToVoxelGrid(data):

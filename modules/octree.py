@@ -473,8 +473,75 @@ def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_l
 
 
 
+def tree_block_processing(coordinates_list):
+    """
+    Load and process the tree block data.
 
-def tree_block_processing(tree_count):
+    Args:
+        coordinates_list (list): A list of tuples where each tuple contains x, y, z coordinates to translate tree blocks.
+
+    Returns:
+        Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
+    """
+
+    def load_and_translate_tree_block_data(dataframe, tree_id, translation):
+        # Filter the data for the specific tree
+        block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
+
+        # Apply translation
+        translation_x, translation_y, translation_z = translation
+        block_data['x'] += translation_x
+        block_data['y'] += translation_y
+        block_data['z'] += translation_z
+
+        # Update block IDs to the format "Tree-[unique number]"
+        global tree_block_count
+        if tree_id in tree_block_count:
+            tree_block_count[tree_id] += 1
+        else:
+            tree_block_count[tree_id] = 1
+
+        block_data['BlockID'] = f'Tree-{tree_id}-{tree_block_count[tree_id]}'
+
+        return block_data
+
+    def get_tree_ids(count):
+        return random.sample(range(1, 17), count)
+
+    def define_attributes(combined_data):
+        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        return attributes
+
+
+    csv_file = 'data/branchPredictions - full.csv'
+
+    data = pd.read_csv(csv_file)
+    print(f"Loaded data with shape {data.shape}")
+
+    # Get random tree IDs
+    print(f'Coordinates list: {coordinates_list}')
+    tree_count = len(coordinates_list)
+    tree_ids = get_tree_ids(tree_count)
+    print(f'Loading and processing {tree_ids} tree blocks...')
+
+    # Process block data for each tree
+    processed_data = [load_and_translate_tree_block_data(data, tree_id, coordinates)
+                      for tree_id, coordinates in zip(tree_ids, coordinates_list)]
+
+    # Combine the block data
+    combined_data = pd.concat(processed_data)
+
+    # Extract points, attributes, and block IDs
+    points = combined_data[['x', 'y', 'z']].to_numpy()
+    attributes = define_attributes(combined_data)
+    block_ids = combined_data['Tree.ID'].tolist()
+
+    return points, attributes, block_ids
+
+
+
+
+def tree_block_processing2(tree_count):
     """
     Load and process the tree block data.
 
@@ -551,9 +618,9 @@ def tree_block_processing(tree_count):
 def main():
 
     # Process tree block data for a specified number of trees
-    tree_count = 2  # Specify the number of tree blocks to process
-    tree_block_data = tree_block_processing(tree_count)
-
+    # Example usage:
+    coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
+    tree_block_data = tree_block_processing(coordinates_list)
 
 
     if tree_block_data is None:

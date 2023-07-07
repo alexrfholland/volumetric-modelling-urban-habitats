@@ -49,7 +49,7 @@ import pandas as pd
 import numpy as np
 
 
-from modules.convertSiteToBlocks import process_lidar_data
+import modules.convertSiteToBlocks as ConvertSites
 import modules.octree as Octree
 
 # File path to the LiDAR data
@@ -57,10 +57,10 @@ file_path = 'data/sites/park.parquet'
 
 # Convert the LiDAR data to a Pandas DataFrame ready for insertion into the Octree
 # Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
-lidar_dataframe = process_lidar_data(file_path)
+lidar_dataframe = ConvertSites.process_lidar_data(file_path)
 
 # Parameters for the octree
-max_depth = 7  # Maximum depth of the Octree
+max_depth = 8  # Maximum depth of the Octree
 
 print('from main..')
 print(lidar_dataframe)
@@ -75,9 +75,16 @@ lidar_points = lidar_dataframe[['X', 'Y', 'Z']].to_numpy()
 lidar_block_ids = lidar_dataframe['blockID'].tolist()
 lidar_attributes = lidar_dataframe[attribute_cols].to_dict('records')
 
+
 # Process tree block data for a specified number of trees
-tree_count = 2  # Specify the number of tree blocks to process
-tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing(tree_count)
+tree_count = 16  # Specify the number of tree blocks to process
+#selected_data = lidar_dataframe.loc[lidar_dataframe['element_type'] == 3, ['X', 'Y', 'Z']]
+selected_data = lidar_dataframe.loc[lidar_dataframe['element_type'].isin([2, 4]), ['X', 'Y', 'Z']]
+print('test')
+print(selected_data)
+#selected_data = [[0,0,0],[0,1,1]]
+treeCoords = ConvertSites.select_random_ground_points(selected_data, tree_count)
+tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing(treeCoords)
 
 # Combine LiDAR and tree block data
 combined_points = np.concatenate([lidar_points, tree_points])
