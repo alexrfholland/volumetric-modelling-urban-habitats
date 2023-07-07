@@ -1,7 +1,7 @@
 import open3d as o3d
 import pandas as pd
 import numpy as np
-from .colorMaps import Colormap
+from colorMaps import Colormap
 
 def enhance_colors_with_illuminance(colors, illuminance):
     return colors * illuminance[:, np.newaxis] ** 5
@@ -26,8 +26,9 @@ def get_and_shuffle_colors(cm, queries, colormap_name):
     return category_colors
 
 def assign_colors_based_on_category(data, category_colors):
-    colors = np.array([category_colors[cat - 1] for cat in data['category']])
+    colors = np.array([category_colors[cat - 1] for cat in data['blockID']])
     return colors
+
 
 def enhance_colors(colors, illuminance):
     enhanced_colors = enhance_colors_with_illuminance(colors, illuminance)
@@ -40,6 +41,18 @@ def convert_to_point_cloud(data, colors):
     return pcd
 
 def process_lidar_data(filepath, colormap_name='glasgowS'):
+    """
+    Returns a dataframe with the columns being X, Y, Z, r, g, b, blockID, and the attributes,
+    with one per column. Rows are the points.
+    
+    Parameters:
+        filepath (str): The path to the lidar data file.
+        colormap_name (str, optional): The name of the colormap. Defaults to 'glasgowS'.
+    
+    Returns:
+        pandas.DataFrame: The processed lidar data as a dataframe.
+    """
+        
     # Load Data
     data = pd.read_parquet(filepath)
     data.rename(columns={'//X': 'X'}, inplace=True)
@@ -58,10 +71,10 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     ]
     
     # Create category mapping
-    data['category'] = create_category_mapping(data, queries)
+    data['blockID'] = create_category_mapping(data, queries)
     
     # Filter out uncategorized points
-    data = data[data['category'] != -1]
+    data = data[data['blockID'] != -1]
     
     # Create a colormap for visualization
     cm = Colormap()
@@ -73,24 +86,36 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     colors = assign_colors_based_on_category(data, category_colors)
     
     # Enhance colors with illuminance
-    illuminance = np.array(data['Illuminance (PCV)'])
-    enhanced_colors = enhance_colors(colors, illuminance)
+    enhanced_colors = enhance_colors(colors, np.array(data['Illuminance (PCV)']))
     
-    # Convert to point cloud
-    pcd = convert_to_point_cloud(data, enhanced_colors)
-
-    # Return the processed point cloud
-    return pcd
-
-if __name__ == "__main__":
-    # This part will only be executed if the script is run as a standalone file,
-    # and not if it's imported as a module.
+    # Assign the color columns directly to the data DataFrame
+    data['r'] = enhanced_colors[:, 0]
+    data['g'] = enhanced_colors[:, 1]
+    data['b'] = enhanced_colors[:, 2]
     
-    filepath = 'data/sites/park.parquet'
-    pcd = process_lidar_data(filepath)
+    # Get the attribute columns
+    attributes_columns = data.columns.difference(['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID'])
+    
+    # Order columns
+    ordered_columns = ['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID'] + list(attributes_columns)
+    result = data[ordered_columns]
+    
+    # Return the DataFrame
+    return result
+
+
+def convertToVoxelGrid(data):
+    # Extract coordinates and colors
+    coordinates = data[['X', 'Y', 'Z']].values
+    colors = data[['r', 'g', 'b']].values
+
+    # Create point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(coordinates)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
 
     # Convert PointCloud to VoxelGrid for visualization
-    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=1.0)
+    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=1)
 
     # Create a visualizer object
     vis = o3d.visualization.Visualizer()
@@ -102,9 +127,28 @@ if __name__ == "__main__":
     # Change view parameters if needed (you can adjust these values)
     view_control = vis.get_view_control()
     view_control.set_zoom(0.8)
-    view_control.set_front([-0.5, -0.5, -0.5])
-    view_control.set_lookat([2, 2, 2])
-    view_control.set_up([0, 0, 1])
+    
+    # This time, we won't set the front vector, but let Open3D handle it
+    # Instead, we'll set the camera to look at the center of the point cloud
+    bounds = np.array(pcd.get_max_bound()) - np.array(pcd.get_min_bound())
+    view_control.set_lookat(np.array(pcd.get_center()))
+    view_control.set_up([0, -1, 0])
+    view_control.set_front([0, 0, 1])
 
     # Begin the visualization
-    o3d.visualization.draw_geometries([voxel_grid])
+    vis.run()
+    vis.destroy_window()
+
+# The main section
+if __name__ == "__main__":
+    # This part will only be executed if the script is run as a standalone file,
+    # and not if it's imported as a module.
+    
+    # Filepath to the Parquet file
+    filepath = 'data/sites/park.parquet'
+
+    # Process the lidar data
+    processed_data = process_lidar_data(filepath)
+
+    # Convert the processed data to a VoxelGrid and visualize it
+    convertToVoxelGrid(processed_data)

@@ -105,6 +105,8 @@ STEP 4 and 5: implement a query function and visualise bounding boxes
 
 
 '''
+# Global dictionary to keep track of tree block counts
+tree_block_count = {}
 
 
 import open3d as o3d
@@ -129,10 +131,10 @@ class OctreeNode:
         self.get_geos() #ensure bounding box and center are computed
 
         # Print statements for checking
-        print(f"Node at depth {self.depth} with min_corner: {self.min_corner}, max_corner: {self.max_corner}")
+        """print(f"Node at depth {self.depth} with min_corner: {self.min_corner}, max_corner: {self.max_corner}")
         print(f"Points: {self.points}")
         print(f"Attributes: {self.attributes}")
-        print(f"Block IDs: {self.block_ids}")
+        print(f"Block IDs: {self.block_ids}")"""
 
 
 
@@ -287,6 +289,64 @@ class CustomOctree:
         return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
 
 def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
+
+    def generate_colors(unique_block_ids):
+        color_mapping = {}
+        for block_id in unique_block_ids:
+            color_mapping[block_id] = [random.random(), random.random(), random.random()]
+        return color_mapping
+
+
+    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
+    
+    view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
+    
+    vis.clear_geometries()
+    vis.add_geometry(voxel_grid)
+
+    # Fetching nodes sorted by ownership
+    single_block_nodes = []
+    multiple_block_nodes = []
+    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes)
+
+    # Create a list of all unique block IDs
+    unique_block_ids = list(set(octree.root.block_ids))
+
+    # Generate a color for each unique block ID
+    color_mapping = generate_colors(unique_block_ids)
+
+    # Create line sets for bounding boxes with corresponding colors for single block nodes
+    linesets = []
+    for node in single_block_nodes:
+        # Convert bounding box to LineSet
+        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
+        # Set colors of LineSet
+        unique_node_block_ids = list(set(node.block_ids))
+        if len(unique_node_block_ids) > 1:
+            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
+        else:
+            color = color_mapping[unique_node_block_ids[0]]
+            lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
+            linesets.append(lineset)
+    
+    # Create line sets for bounding boxes with a different color for multiple block nodes
+    for node in multiple_block_nodes:
+        # Convert bounding box to LineSet
+        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
+        # Set colors of LineSet
+        color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
+        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
+        linesets.append(lineset)
+
+    # Adding linesets to the visualizer
+    for lineset in linesets:
+        vis.add_geometry(lineset)
+
+    vis.get_view_control().set_lookat(octree.root.center)
+    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
+
+
+def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_level):
     voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
     
     view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
@@ -326,17 +386,84 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
     vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
 
 
-def load_and_translate_block_data(dataframe, tree_id, translation_range=10):
-    # Filter the data for the specific tree
-    block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
+
+
+
+def tree_block_processing(tree_count):
+    """
+    Load and process the tree block data.
+
+    Args:
+        tree_count (int): The number of tree blocks to process.
+
+    Returns:
+        Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
+    """
+    # Load the point cloud data
+
+
+    def load_and_translate_tree_block_data(dataframe, tree_id, translation_range=20):
+        # Filter the data for the specific tree
+        block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
+        
+        # Apply a random translation on the horizontal plane (X, Y)
+        translation_x = random.uniform(-translation_range, translation_range)
+        translation_y = random.uniform(-translation_range, translation_range)
+        block_data['x'] += translation_x
+        block_data['y'] += translation_y
+        
+        # Update block IDs to the format "Tree-[unique number]"
+        global tree_block_count
+        if tree_id in tree_block_count:
+            tree_block_count[tree_id] += 1
+        else:
+            tree_block_count[tree_id] = 1
+
+        block_data['BlockID'] = f'Tree-{tree_id}-{tree_block_count[tree_id]}'
+        
+        return block_data
+
+    def get_tree_ids(tree_count):
+        return random.sample(range(1, 17), tree_count)
     
-    # Apply a random translation on the horizontal plane (X, Y)
-    translation_x = random.uniform(-translation_range, translation_range)
-    translation_y = random.uniform(-translation_range, translation_range)
-    block_data['x'] += translation_x
-    block_data['y'] += translation_y
+    def define_attributes(combined_data):
+        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        return attributes
     
-    return block_data
+
+
+    csv_file = 'data/branchPredictions - full.csv'
+    if not os.path.exists(csv_file):
+        print(f"Error: File not found - {csv_file}")
+        return
+
+    data = pd.read_csv(csv_file)
+    print(f"Loaded data with shape {data.shape}")
+    print(data.head())
+
+    # Get random tree IDs
+    tree_ids = get_tree_ids(tree_count)
+    print(f'Loading and processing {tree_ids} tree blocks...')
+
+    # Process block data for each tree
+    processed_data = [load_and_translate_tree_block_data(data, i) for i in tree_ids]
+
+    # Combine the block data
+    combined_data = pd.concat(processed_data)
+
+    print(combined_data)
+
+    # Rename columns
+    combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
+
+    # Extract points, attributes, and block IDs
+    points = combined_data[['x', 'y', 'z']].to_numpy()
+    attributes = define_attributes(combined_data)
+    block_ids = combined_data['Tree.ID'].tolist()
+
+    return points, attributes, block_ids
+
+
 
 
 import os
@@ -345,33 +472,17 @@ import numpy as np
 
 def main():
     try:
-        # Load the point cloud data
-        csv_file = 'data/branchPredictions - full.csv'
-        if not os.path.exists(csv_file):
-            print(f"Error: File not found - {csv_file}")
+        # Process tree block data for a specified number of trees
+        tree_count = 2  # Specify the number of tree blocks to process
+        tree_block_data = tree_block_processing(tree_count)
+
+
+
+        if tree_block_data is None:
+            print("Error: Tree block processing failed.")
             return
-
-        data = pd.read_csv(csv_file)
-        print(f"Loaded data with shape {data.shape}")
-        print(data.head())
-
-        # Load and translate block data for Tree.ID == 13 and Tree.ID == 1
-        # Note: Ensure that 'load_and_translate_block_data' is either a static method or
-        # create an object of 'CustomOctree' with the proper parameters before calling this method.
-        # Assuming it's a static method:
-        block_data_13 = load_and_translate_block_data(data, 13)
-        block_data_1 = load_and_translate_block_data(data, 1)
-
-        # Combine the block data
-        combined_data = pd.concat([block_data_13, block_data_1])
-
-        # Rename columns
-        combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
-
-        # Extract points, attributes, and block IDs
-        points = combined_data[['x', 'y', 'z']].to_numpy()
-        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-        block_ids = combined_data['Tree.ID'].tolist()
+        
+        points, attributes, block_ids = tree_block_data
 
         # Compute min and max corners for the bounding box
         min_corner = np.min(points, axis=0)
@@ -396,6 +507,6 @@ def main():
     except Exception as e:
         print(f"An error occurred: {e}")
 
+
 if __name__ == "__main__":
     main()
-
