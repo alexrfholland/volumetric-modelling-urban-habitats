@@ -113,7 +113,7 @@ import pandas as pd
 import random
 
 
-from BoundingBoxToLineSet import BoundingBoxToLineSet
+from boxlineset import BoundingBoxToLineSet
 
 
 class OctreeNode:
@@ -128,6 +128,12 @@ class OctreeNode:
         self.dominant_attribute, self.dominant_color = self.calculate_dominant_attribute_and_color()
         self.get_geos() #ensure bounding box and center are computed
 
+        # Print statements for checking
+        print(f"Node at depth {self.depth} with min_corner: {self.min_corner}, max_corner: {self.max_corner}")
+        print(f"Points: {self.points}")
+        print(f"Attributes: {self.attributes}")
+        print(f"Block IDs: {self.block_ids}")
+
 
 
     def calculate_dominant_attribute_and_color(self):
@@ -141,7 +147,6 @@ class OctreeNode:
         max_count_attr = max(counts, key=counts.get)
         color = CustomOctree.get_color_based_on_attribute(max_count_attr)
         return max_count_attr, color 
-
 
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
@@ -334,64 +339,63 @@ def load_and_translate_block_data(dataframe, tree_id, translation_range=10):
     return block_data
 
 
+import os
+import pandas as pd
+import numpy as np
 
+def main():
+    try:
+        # Load the point cloud data
+        csv_file = 'data/branchPredictions - full.csv'
+        if not os.path.exists(csv_file):
+            print(f"Error: File not found - {csv_file}")
+            return
 
+        data = pd.read_csv(csv_file)
+        print(f"Loaded data with shape {data.shape}")
+        print(data.head())
 
-# Load the point cloud data
-csv_file = 'data/branchPredictions - full.csv'
-data = pd.read_csv(csv_file)
+        # Load and translate block data for Tree.ID == 13 and Tree.ID == 1
+        # Note: Ensure that 'load_and_translate_block_data' is either a static method or
+        # create an object of 'CustomOctree' with the proper parameters before calling this method.
+        # Assuming it's a static method:
+        block_data_13 = load_and_translate_block_data(data, 13)
+        block_data_1 = load_and_translate_block_data(data, 1)
 
-# Load and translate block data for Tree.ID == 13 and Tree.ID == 1
-block_data_13 = load_and_translate_block_data(data, 13)
-block_data_1 = load_and_translate_block_data(data, 1)
+        # Combine the block data
+        combined_data = pd.concat([block_data_13, block_data_1])
 
-# Combine the block data
-combined_data = pd.concat([block_data_13, block_data_1])
+        # Rename columns
+        combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
 
+        # Extract points, attributes, and block IDs
+        points = combined_data[['x', 'y', 'z']].to_numpy()
+        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        block_ids = combined_data['Tree.ID'].tolist()
 
-# Rename columns
-combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
+        # Compute min and max corners for the bounding box
+        min_corner = np.min(points, axis=0)
+        max_corner = np.max(points, axis=0)
 
-# Extract points, attributes, and block IDs
-points = combined_data[['x', 'y', 'z']].to_numpy()
-attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-block_ids = combined_data['Tree.ID'].tolist()
+        # Create Octree
+        max_depth = 5
+        octree = CustomOctree(min_corner, max_corner, points, attributes, block_ids, max_depth)
+        print(f"Created Octree with max depth {max_depth}")
 
-# Compute min and max corners for the bounding box
-min_corner = np.min(points, axis=0)
-max_corner = np.max(points, axis=0)
+        # Visualization
+        vis = o3d.visualization.Visualizer()
+        vis.create_window()
 
-# Create Octree
-max_depth = 5
-octree = CustomOctree(min_corner, max_corner, points, attributes, block_ids, max_depth)
+        # Update visualization
+        update_visualization(vis, octree, max_depth, 2, 3)
 
-# Visualization
-vis = o3d.visualization.Visualizer()
-vis.create_window()
+        # Run visualization
+        vis.run()
+        vis.destroy_window()
 
-def print_nodes(node, level=0):
-    # Print the node information
-    unique_block_ids = list(set(node.block_ids))
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
-    #print(f"Level: {level}, Block IDs: {unique_block_ids}")
+if __name__ == "__main__":
+    main()
 
-
-    #print unique_block_ids if there are multiple
-    if len(unique_block_ids) > 1:
-        print(f"Level: {level}, Block IDs: {unique_block_ids}")
-
-
-
-    # Recurse for each child
-    for child in node.children:
-        print_nodes(child, level + 1)
-
-# Call the function on the root of the Octree
-print_nodes(octree.root)
-
-# Update visualization
-update_visualization(vis, octree, max_depth, 2, 3)
-
-# Run visualization
-vis.run()
-vis.destroy_window()
