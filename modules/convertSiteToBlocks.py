@@ -81,7 +81,7 @@ def convert_to_point_cloud(data, colors):
     pcd.colors = o3d.utility.Vector3dVector(colors)
     return pcd
 
-def process_lidar_data(filepath, colormap_name='glasgowS'):
+def process_lidar_data(filepath, colormap_name='lajollaS'):
     """
     Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
     with one per column. Rows are the points.
@@ -104,12 +104,12 @@ def process_lidar_data(filepath, colormap_name='glasgowS'):
     
     # Queries
     queries = [
-        #"element_type == 0",
-        #"element_type == 1 and horizontality == 0",
-        #"element_type == 1 and horizontality == 1",
-        #"element_type == 1 and horizontality == 2",
+        "element_type == 0",
+        "element_type == 1 and horizontality == 0",
+        "element_type == 1 and horizontality == 1",
+        "element_type == 1 and horizontality == 2",
         "element_type == 2",
-        #"element_type == 3",
+        "element_type == 3",
         "element_type == 4"
     ]
     
@@ -225,7 +225,6 @@ if __name__ == "__main__":
 
     # Process the lidar data
     processed_data = process_lidar_data(filepath)
-    print(processed_data)
-
+    
     # Convert the processed data to a VoxelGrid and visualize it
-    #convertToVoxelGrid(processed_data)
+    convertToVoxelGrid(processed_data)
