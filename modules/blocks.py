@@ -1,5 +1,4 @@
 import pandas as pd
-import re
 
 class Block:
     def __init__(self, pointcloud=None, name='', conditions=None, attributes=None):
@@ -25,13 +24,6 @@ class TreeBlock(Block):
 # read the csv files
 df_tree_mapping = pd.read_csv('./data/treemapping.csv')
 df_branch_predictions = pd.read_csv('./data/branchPredictions - full.csv')
-df_leroux_data = pd.read_csv('./data/leroux-data.csv')
-
-control_map = {
-    'high': 'Urban built-up',
-    'medium': 'Urban parkland',
-    'low': ['Reserve', 'Pasture']
-}
 
 # create tree blocks
 tree_blocks = []
@@ -39,29 +31,13 @@ for i, row in df_tree_mapping.iterrows():
     for col in df_tree_mapping.columns:
         if col != 'control level':
             otherData = df_branch_predictions[df_branch_predictions['Tree.ID'] == row[col]]
-
-            df_selected = df_leroux_data[df_leroux_data['Tree Size'] == col]
-
-            attributes = {}
-            for _, leroux_row in df_selected.iterrows():
-                controls = control_map[row['control level']]
-                controls = [controls] if isinstance(controls, str) else controls
-
-                for control in controls:
-                    attribute_value = leroux_row[control]
-                    # extract high and low values
-                    high, low = map(float, re.findall(r'\d+\.\d+', attribute_value))
-                    
-                    if leroux_row['Attribute'] not in attributes or high > attributes[leroux_row['Attribute']]['high']:
-                        attributes[leroux_row['Attribute']] = {'low': low, 'high': high}
-
             tree_block = TreeBlock(
-                control_level=row['control_level'],
+                control_level=row['control level'],
                 tree_id_value=row[col],
                 size=col,
                 name=f"{row['control level']}_{col}",
                 conditions=[],
-                attributes=attributes,
+                attributes={},
                 otherData=otherData
             )
             tree_blocks.append(tree_block)
@@ -69,3 +45,4 @@ for i, row in df_tree_mapping.iterrows():
 # print created tree blocks
 for tree_block in tree_blocks:
     print(tree_block)
+    #print(tree_block.otherData)
