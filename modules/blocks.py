@@ -1,5 +1,28 @@
 import pandas as pd
 
+df_attributes = pd.read_csv('./data/lerouxdata.csv')
+
+def control_level_size_df(df_attributes, control_level, size):
+    control_level_low = f"{control_level} low"
+    control_level_high = f"{control_level} high"
+
+    size_filter = df_attributes['Size'] == size
+
+    df_filtered = df_attributes[size_filter][['Attribute', control_level_low, control_level_high]]
+
+    return df_filtered
+
+# Example usage:
+control_level = "maximum"
+size = "large"
+df_attributes = pd.read_csv('./data/lerouxdata.csv')  # assuming you have this DataFrame
+
+print(control_level_size_df(df_attributes, control_level, size))
+
+
+
+
+
 class Block:
     def __init__(self, pointcloud=None, name='', conditions=None, attributes=None):
         self.pointcloud = pointcloud
