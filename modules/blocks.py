@@ -345,7 +345,100 @@ def point_cloud_to_voxel_grid(pcd: o3d.geometry.PointCloud, voxel_size: float = 
 # Define your desired point size
 point_size = 1
 
+def set_attributes_for_tree_block(tree_block, df_attributes):
+    """Set the attribute values for a tree block based on its control level and size."""
+    attr_df = control_level_size_df(df_attributes, tree_block.control_level, tree_block.size)
+    low_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict()
+    high_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict()
 
+    tree_block.attributes = {
+        'low': low_dict,
+        'high': high_dict
+    }
+
+
+def synthesize_voxels(tree_block, attributes_to_voxel):
+    """For each attribute in attributes_to_voxel, synthesize voxels based on the attribute's random value between its low and high limits."""
+    for attribute, synthesized_type in attributes_to_voxel:
+        low = float(tree_block.attributes['low'][attribute])
+        high = float(tree_block.attributes['high'][attribute])
+        value = random.uniform(low, high)
+
+        if attribute == '% of peeling bark cover on trunk/limbs':
+            number_of_voxels = round(len(tree_block.voxel_grid) * (value / 100))
+        else:
+            number_of_voxels = round(value)
+
+        selected_voxels = select_voxels_for_synthesis(tree_block.voxel_grid, number_of_voxels)
+
+        # Assign the synthesized type to the selected voxels
+        for voxel in selected_voxels:
+            voxel['synthesized_type'] = synthesized_type
+
+        # After the synthesized type has been set, decide the voxel_type and color
+        for voxel in tree_block.voxel_grid.values():
+            voxel['voxel_type'] = voxel['synthesized_type'] if voxel['synthesized_type'] else compute_dominant_attribute(voxel)
+            voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
+
+        print(f"Number of voxels to convert to {synthesized_type}: {number_of_voxels}")
+
+
+def convert_voxel_grid_to_point_cloud(tree_block, point_size):
+    """Convert the voxel grid of a tree block to a point cloud."""
+    # Generate a point cloud and visualize it
+    pcd = voxel_grid_to_point_cloud(tree_block.voxel_grid, point_size)
+    
+    # Convert point cloud to voxel grid
+    voxel_grid_3d = point_cloud_to_voxel_grid(pcd, 0.5)
+
+    # Return the 3D voxel grid
+    return voxel_grid_3d
+
+
+# Attributes to convert to voxels
+attributes_to_voxel = [
+    ('Number of hollows', 'hollows'),
+    ('Number of epiphytes', 'epiphytes'),
+    ('% of peeling bark cover on trunk/limbs', 'peeling_bark')
+]
+
+# Define your desired point size
+point_size = 1
+
+# Apply create_voxel_grid and additional processing to each TreeBlock in tree_blocks
+for tree_block in tree_blocks:
+    # Create voxel grid for the tree block
+    tree_block.voxel_grid = create_voxel_grid(tree_block)
+
+    # Set the attribute values for the tree block
+    set_attributes_for_tree_block(tree_block, df_attributes)
+
+    # Synthesize voxels for the tree block
+    synthesize_voxels(tree_block, attributes_to_voxel)
+
+    # Convert the voxel grid of the tree block to a point cloud
+    voxel_grid_3d = convert_voxel_grid_to_point_cloud(tree_block, point_size)
+
+    # Visualize voxel grid
+    o3d.visualization.draw_geometries([voxel_grid_3d])
+
+
+
+def print_voxel_stats(tree_blocks):
+    for tree_block in tree_blocks:
+        voxel_types = [voxel['voxel_type'] for voxel in tree_block.voxel_grid.values()]
+        voxel_counter = Counter(voxel_types)
+        print(f"\nTree Block: {tree_block}")
+        print("Voxel count by type:")
+        for voxel_type, count in voxel_counter.items():
+            print(f"    {voxel_type}: {count}")
+
+
+# Now you can call this function after creating and processing all tree_blocks:
+print_voxel_stats(tree_blocks)
+
+
+"""
 # Apply create_voxel_grid to each TreeBlock in tree_blocks
 for tree_block in tree_blocks:
     # Changes made here. Assigning the voxel grid to tree_block
@@ -396,105 +489,53 @@ for tree_block in tree_blocks:
     voxel_grid_3d = point_cloud_to_voxel_grid(pcd, 0.5)
 
     # Visualize voxel grid
-    # o3d.visualization.draw_geometries([voxel_grid_3d])
-
-
-def print_voxel_stats(tree_blocks):
-    for tree_block in tree_blocks:
-        voxel_types = [voxel['voxel_type'] for voxel in tree_block.voxel_grid.values()]
-        voxel_counter = Counter(voxel_types)
-        print(f"\nTree Block: {tree_block}")
-        print("Voxel count by type:")
-        for voxel_type, count in voxel_counter.items():
-            print(f"    {voxel_type}: {count}")
-
-
-# Now you can call this function after creating and processing all tree_blocks:
-print_voxel_stats(tree_blocks)
+    o3d.visualization.draw_geometries([voxel_grid_3d])
 """
-# Apply create_voxel_grid to each TreeBlock in tree_blocks
-for tree_block in tree_blocks:
-    voxel_grid = create_voxel_grid(tree_block)
-    
-    attr_df = control_level_size_df(df_attributes, tree_block.control_level, tree_block.size)
-    low_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict()
-    high_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict()
-
-    tree_block.attributes = {
-        'low': low_dict,
-        'high': high_dict
-    }
-    
-    attributes_to_voxel = [
-        ('Number of hollows', 'hollows'),
-        ('Number of epiphytes', 'epiphytes'),
-        ('% of peeling bark cover on trunk/limbs', 'peeling_bark')
-    ]
-
-    for attribute, synthesized_type in attributes_to_voxel:
-        low = float(tree_block.attributes['low'][attribute])
-        high = float(tree_block.attributes['high'][attribute])
-        value = random.uniform(low, high)
-
-        if attribute == '% of peeling bark cover on trunk/limbs':
-            number_of_voxels = round(len(voxel_grid) * (value / 100))
-        else:
-            number_of_voxels = round(value)
-
-        selected_voxels = select_voxels_for_synthesis(voxel_grid, number_of_voxels)
-        
-        # Assign the synthesized type to the selected voxels
-        for voxel in selected_voxels:
-            voxel['synthesized_type'] = synthesized_type
-
-        print(f"Number of voxels to convert to {synthesized_type}: {number_of_voxels}")
 
 """
-# Step 1: Read the CSV files
-# The CSV files containing tree mapping, branch predictions, and attributes are read into pandas DataFrames.
+Step 1: Read the CSV Files
 
-# Step 2: Define the Block and TreeBlock classes
-# The Block and TreeBlock classes are defined to represent the basic building blocks of the data structure.
-# Block class contains attributes like point cloud, name, conditions, and additional attributes.
-# TreeBlock class inherits from Block and adds attributes specific to tree blocks like control level, tree ID value, size, and other data.
+In this step, we're reading CSV files that contain important data regarding tree mapping, branch predictions, and attributes into pandas DataFrames. This raw data will be used in the upcoming steps for data processing and visualization.
 
-# Step 3: Define utility functions
-# Utility functions are defined to perform various operations required for voxel grid creation and attribute synthesis.
-# These functions include adding branch information to a voxel, computing the dominant attribute of a voxel,
-# assigning color based on the dominant attribute, creating a voxel grid from a TreeBlock,
-# selecting voxels for synthesis, and assigning synthesized attribute types to the selected voxels.
+Step 2: Define the Block and TreeBlock Classes
 
-# Step 4: Main code
-# The main code begins here and follows the steps outlined below.
+The Block and TreeBlock classes represent the primary structures for processing and visualizing tree data. The Block class includes essential properties such as a point cloud, name, and various conditions, while the TreeBlock class extends the Block class, adding specific attributes for tree blocks like control level, tree ID value, size, and more.
 
-# Step 4.1: Read the CSV files
-# The CSV files are read again to ensure they are accessible for further processing.
+Step 3: Define Utility Functions
 
-# Step 4.2: Create TreeBlock objects
-# TreeBlock objects are created using the data from the CSV files and other relevant information.
-# Each TreeBlock represents a distinct tree and contains the necessary data for voxel grid creation and attribute synthesis.
+To support the voxel grid creation and attribute synthesis, various utility functions are defined. These include adding branch information to a voxel, computing the voxel's dominant attribute, assigning a color based on this dominant attribute, creating a voxel grid from a TreeBlock, and selecting voxels for synthesis based on certain conditions.
 
-# Step 4.3: Attribute synthesis (Branch-based)
-# For each TreeBlock, attribute synthesis is performed based on the branch data in tree_block.otherData.
-# The number of branches of each type (isDead, isLateral, isBoth, isNone) within a voxel is calculated.
-# The dominant attribute of a voxel is determined based on the type with the longest cumulative branch length.
+Step 4: Main Code Execution
 
-# Step 4.4: Attribute synthesis (Synthesized attributes)
-# For each TreeBlock, additional synthesized attributes are obtained from tree_block.attributes.
-# These attributes are statistical and need to be added to the voxel grid.
+This step includes several sub-steps that make up the main part of the program.
 
-# Step 4.5: Voxel selection and conversion
-# Voxels are selected for conversion based on attribute priority, starting with isNeither type.
-# If more voxels are needed, voxels of isLateralOnly type are considered, followed by isDeadOnly and isBoth types.
-# The selected voxels are converted by assigning the synthesized attribute types to them.
+Step 4.1: Re-reading the CSV Files
 
-# Step 4.6: Voxel grid creation and visualization
-# For each TreeBlock, a voxel grid is created using the branch data and synthesized attribute information.
-# The voxel grid is then converted to a point cloud for visualization using Open3D library.
+CSV files are re-read here to ensure their content is accessible for further processing. This step might not be necessary if the data from Step 1 is already accessible here.
 
-# Step 4.7: Visualize the voxel grid
-# The created voxel grids are visualized using Open3D visualization capabilities.
+Step 4.2: Create TreeBlock Objects
 
-# The above steps collectively aim to process the input data, perform attribute synthesis based on branch data,
-# incorporate synthesized attributes into the voxel grid, select and convert voxels into synthesized types,
-# and visualize the resulting voxel grids with the assigned attributes for each TreeBlock.
+Using the data from the CSV files and other relevant details, TreeBlock objects are created. Each TreeBlock represents a unique tree and encapsulates all necessary data for voxel grid creation and attribute synthesis.
+
+Step 4.3: Attribute Synthesis (Branch-based)
+
+In this step, for each TreeBlock, we perform attribute synthesis using the branch data contained in tree_block.otherData. Here, the branch types are counted for each voxel (isDead, isLateral, isBoth, isNone), and the dominant attribute for each voxel is determined based on the longest cumulative branch length.
+
+Step 4.4: Attribute Synthesis (Synthesized Attributes)
+
+For each TreeBlock, additional synthesized attributes are obtained from tree_block.attributes and added to the voxel grid. These attributes are typically statistical properties derived from the data.
+
+Step 4.5: Voxel Selection and Conversion
+
+Based on attribute priority, voxels are selected for conversion starting with the 'isNeither' type. If additional voxels are needed, 'isLateralOnly' type voxels are considered next, followed by 'isDeadOnly' and 'isBoth' types. The selected voxels are then converted by assigning the synthesized attribute types to them.
+
+Step 4.6: Voxel Grid Creation and Visualization
+
+For each TreeBlock, a voxel grid is created from the branch data and the synthesized attribute information. Then, the voxel grid is converted into a point cloud using the Open3D library for visualization purposes.
+
+Step 4.7: Visualize the Voxel Grid
+
+Lastly, the created voxel grids are visualized using the capabilities of the Open3D library, providing an interactive way to explore the synthesized tree block data.
+
+The entire process takes raw data about trees, processes it, synthesizes new attribute data, incorporates this data into a voxel grid, and then visualizes the result. 
+"""
