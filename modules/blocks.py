@@ -102,4 +102,118 @@ tree_blocks_df = pd.DataFrame(tree_blocks_dict)
 # Pivot DataFrame
 pivot_df = tree_blocks_df.pivot(index='control_level', columns='size', values='tree_block')
 
-print(pivot_df.loc['moderate', 'medium'])
+#use open3d to
+#convert to 0.5m voxel grids with attributes. The coordinates are the x,y,z columns. The atrributes are the columns: "isDeadOnly","isLateralOnly","isBoth","isNeither".
+#to populate the attributes, for each voxel:
+# create a dictionary with the keys being the four types of attributes (Branch.length, isDeadOnly, isLateralOnly, isBoth, isNeither)
+#1 find all branches that are within the bounds of the voxel
+#2 for each branch, check if it is dead only, lateral only, both, or neither
+#3 add the length of the branch to the corresponding attribute
+#4 once all branches have been allocated to each voxel, find the length of all branches of each type per voxel
+#5 have a dominant attribute colour that is the attribute with the highest length
+#6 assign colour to the voxel based on the dominant attribute
+
+
+import open3d as o3d
+import numpy as np
+from typing import Tuple
+
+def add_branch_to_voxel(voxel: Dict[str, Any], branch: pd.Series):
+    if branch['Branch.type'] == 'dead' and branch['Branch.angle'] > 20:
+        category = 'isDeadOnly'
+    elif branch['Branch.type'] != 'dead' and branch['Branch.angle'] <= 20:
+        category = 'isLateralOnly'
+    elif branch['Branch.type'] == 'dead' and branch['Branch.angle'] <= 20:
+        category = 'isBoth'
+    else:
+        category = 'isNeither'
+    
+    voxel[category] += branch['Branch.length']
+
+            
+def compute_dominant_attribute(voxel: Dict[str, Any]) -> str:
+    categories = ['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']
+    lengths = [voxel[category] for category in categories]
+    dominant_index = np.argmax(lengths)
+    print(voxel)
+    return categories[dominant_index]
+
+def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, float, float]:
+    colors = {
+        'isDeadOnly': (1, 0, 0),     # red
+        'isLateralOnly': (0, 1, 0),  # green
+        'isBoth': (0, 0, 1),         # blue
+        'isNeither': (1, 1, 1)       # white
+    }
+    return colors[dominant_attribute]
+
+def create_voxel_grid(tree_block: TreeBlock, voxel_size: float = 0.5) -> o3d.geometry.PointCloud:
+    # Define the voxel grid
+    voxel_grid: Dict[str, Dict[str, Any]] = {}
+
+    for _, branch in tree_block.otherData.iterrows():
+        # Determine voxel for this branch
+        voxel_x = np.floor(branch['x'] / voxel_size) * voxel_size
+        voxel_y = np.floor(branch['y'] / voxel_size) * voxel_size
+        voxel_z = np.floor(branch['z'] / voxel_size) * voxel_size
+        voxel_key = f"{voxel_x}_{voxel_y}_{voxel_z}"
+
+        # Initialize voxel if not already in grid
+        if voxel_key not in voxel_grid:
+            voxel_grid[voxel_key] = {
+                'x': voxel_x,
+                'z': voxel_y,
+                'y': voxel_z,
+                'isDeadOnly': 0,
+                'isLateralOnly': 0,
+                'isBoth': 0,
+                'isNeither': 0
+            }
+
+        # Add branch to voxel
+        add_branch_to_voxel(voxel_grid[voxel_key], branch)
+
+    # Compute dominant attribute and color for each voxel
+    for voxel in voxel_grid.values():
+        dominant_attribute = compute_dominant_attribute(voxel)
+        voxel['color'] = assign_color_to_dominant_attribute(dominant_attribute)
+
+    # Convert voxel grid to point cloud for visualization
+    point_cloud = o3d.geometry.PointCloud()
+    for voxel in voxel_grid.values():
+        point = np.array([voxel['x'], voxel['y'], voxel['z']])
+        color = voxel['color']
+        point_cloud.points.append(point)
+        point_cloud.colors.append(color)
+
+    return point_cloud
+
+"""# Apply create_voxel_grid to each TreeBlock in tree_blocks
+for tree_block in tree_blocks:
+    point_cloud = create_voxel_grid(tree_block)
+    o3d.visualization.draw_geometries([point_cloud])
+"""
+
+def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, float, float]:
+    colors = {
+        'isDeadOnly': (1, 0, 0),     # Red: RGB value of (1, 0, 0)
+        'isLateralOnly': (0, 1, 0),  # Green: RGB value of (0, 1, 0)
+        'isBoth': (0, 0, 1),         # Blue: RGB value of (0, 0, 1)
+        'isNeither': (.25,.25,.25)       # White: RGB value of (1, 1, 1)
+    }
+    return colors[dominant_attribute]
+
+
+def create_voxel_grid_from_point_cloud(tree_block: TreeBlock, voxel_size: float = 0.5) -> o3d.geometry.VoxelGrid:
+    # Convert tree_block to a point cloud
+    point_cloud = create_voxel_grid(tree_block, voxel_size)
+
+    # Create a voxel grid from the point cloud
+    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(point_cloud, voxel_size)
+
+    return voxel_grid
+
+# Apply create_voxel_grid_from_point_cloud to each TreeBlock in tree_blocks
+for tree_block in tree_blocks:
+    voxel_grid = create_voxel_grid_from_point_cloud(tree_block)
+    o3d.visualization.draw_geometries([voxel_grid])
