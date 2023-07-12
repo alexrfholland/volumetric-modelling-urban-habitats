@@ -1,6 +1,8 @@
 import pandas as pd
 
 from typing import List, Dict, Tuple, Any, Optional
+from collections import Counter
+
 
 
 # read the csv files
@@ -17,8 +19,8 @@ class Block:
         self.conditions = conditions if conditions else []
         self.attributes = attributes if attributes else {}
 
-    def __str__(self) -> str:
-        return f"Block(name={self.name}, conditions={self.conditions}, attributes={self.attributes})"
+    """def __str__(self) -> str:
+        return f"Block(name={self.name}, conditions={self.conditions}, attributes={self.attributes})"""
 
 
 class TreeBlock(Block):
@@ -30,7 +32,8 @@ class TreeBlock(Block):
         self.otherData = otherData if otherData is not None else pd.DataFrame()
 
     def __str__(self) -> str:
-        return f"TreeBlock(control_level={self.control_level}, tree_id_value={self.tree_id_value}, size={self.size}, {super().__str__()})"
+        #return f"TreeBlock(control_level={self.control_level}, tree_id_value={self.tree_id_value}, size={self.size}, {super().__str__()})"
+        return f"TreeBlock, control: {self.control_level}, size: {self.size}, scanned tree no: {self.tree_id_value}{super().__str__()})"
 
 # assume df_attributes, df_tree_mapping, and df_branch_predictions are already defined and are of type pd.DataFrame
 
@@ -342,10 +345,12 @@ def point_cloud_to_voxel_grid(pcd: o3d.geometry.PointCloud, voxel_size: float = 
 # Define your desired point size
 point_size = 1
 
+
 # Apply create_voxel_grid to each TreeBlock in tree_blocks
 for tree_block in tree_blocks:
-    voxel_grid = create_voxel_grid(tree_block)
-    
+    # Changes made here. Assigning the voxel grid to tree_block
+    tree_block.voxel_grid = create_voxel_grid(tree_block)
+
     attr_df = control_level_size_df(df_attributes, tree_block.control_level, tree_block.size)
     low_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict()
     high_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict()
@@ -354,7 +359,7 @@ for tree_block in tree_blocks:
         'low': low_dict,
         'high': high_dict
     }
-    
+
     attributes_to_voxel = [
         ('Number of hollows', 'hollows'),
         ('Number of epiphytes', 'epiphytes'),
@@ -367,47 +372,45 @@ for tree_block in tree_blocks:
         value = random.uniform(low, high)
 
         if attribute == '% of peeling bark cover on trunk/limbs':
-            number_of_voxels = round(len(voxel_grid) * (value / 100))
+            number_of_voxels = round(len(tree_block.voxel_grid) * (value / 100))
         else:
             number_of_voxels = round(value)
 
-        selected_voxels = select_voxels_for_synthesis(voxel_grid, number_of_voxels)
-        
+        selected_voxels = select_voxels_for_synthesis(tree_block.voxel_grid, number_of_voxels)
+
         # Assign the synthesized type to the selected voxels
         for voxel in selected_voxels:
             voxel['synthesized_type'] = synthesized_type
 
         # After the synthesized type has been set, decide the voxel_type and color
-        for voxel in voxel_grid.values():
+        for voxel in tree_block.voxel_grid.values():
             voxel['voxel_type'] = voxel['synthesized_type'] if voxel['synthesized_type'] else compute_dominant_attribute(voxel)
             voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
-        
 
         print(f"Number of voxels to convert to {synthesized_type}: {number_of_voxels}")
-    
+
     # Generate a point cloud and visualize it
-    pcd = voxel_grid_to_point_cloud(voxel_grid, point_size)
-    
-    #Convert point cloud to voxel grid
+    pcd = voxel_grid_to_point_cloud(tree_block.voxel_grid, point_size)
+
+    # Convert point cloud to voxel grid
     voxel_grid_3d = point_cloud_to_voxel_grid(pcd, 0.5)
 
     # Visualize voxel grid
-    #o3d.visualization.draw_geometries([voxel_grid_3d])
+    # o3d.visualization.draw_geometries([voxel_grid_3d])
 
-from collections import Counter
 
 def print_voxel_stats(tree_blocks):
     for tree_block in tree_blocks:
         voxel_types = [voxel['voxel_type'] for voxel in tree_block.voxel_grid.values()]
         voxel_counter = Counter(voxel_types)
-        print(f"\nTree Block ID: {tree_block.id}")
+        print(f"\nTree Block: {tree_block}")
         print("Voxel count by type:")
         for voxel_type, count in voxel_counter.items():
             print(f"    {voxel_type}: {count}")
 
+
 # Now you can call this function after creating and processing all tree_blocks:
 print_voxel_stats(tree_blocks)
-
 """
 # Apply create_voxel_grid to each TreeBlock in tree_blocks
 for tree_block in tree_blocks:
