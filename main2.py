@@ -60,7 +60,7 @@ file_path = 'data/sites/park.parquet'
 lidar_dataframe = ConvertSites.process_lidar_data(file_path)
 
 # Parameters for the octree
-max_depth = 8  # Maximum depth of the Octree
+max_depth = 7  # Maximum depth of the Octree
 
 print('from main..')
 print(lidar_dataframe)
@@ -102,9 +102,170 @@ vis = o3d.visualization.Visualizer()
 vis.create_window()
 
 # Update visualization
-Octree.update_visualization(vis, octree, max_depth, 5, 7)
+grid, lines, voxelSize = Octree.update_visualization(vis, octree, max_depth, 4, 5)
+
+print(voxelSize)
 
 # Run visualization
-vis.run()
-vis.destroy_window()
+"""vis.run()
+vis.destroy_window()"""
 
+import pyvista as pv
+
+# Conversion function from VoxelGrid to Trianglegrid
+def voxel_grid_to_mesh(voxel_grid_3d: o3d.geometry.VoxelGrid, voxel_size: float):
+        voxels=voxel_grid_3d.get_voxels()
+        vox_mesh=o3d.geometry.TriangleMesh()
+
+        for v in voxels:
+            cube=o3d.geometry.TriangleMesh.create_box(width=1, height=1,
+            depth=1)
+            cube.paint_uniform_color(v.color)
+            cube.translate(v.grid_index, relative=False)
+            vox_mesh+=cube
+
+        # Scale by the voxel size
+        vox_mesh.scale(voxel_size, center=(0,0,0))
+
+        # Merge close vertices to ensure the mesh is manifold
+        #vox_mesh.merge_close_vertices(0.0000001)
+
+        # Compute vertex normals for shading
+        vox_mesh.compute_vertex_normals()
+
+        return vox_mesh
+
+# Conversion functions
+def open3d_grid_to_pyvista_polydata_with_vertex_colors(grid):
+    # Fetch the vertices, faces and colors from the Open3D grid
+    vertices = np.asarray(grid.vertices)
+    triangles = np.asarray(grid.triangles)
+    colors = np.asarray(grid.vertex_colors)
+
+    # Convert Open3D's faces format to PyVista's faces format
+    faces = np.empty((triangles.shape[0], 4), dtype=np.int64)
+    faces[:, 0] = 3
+    faces[:, 1:] = triangles
+
+    # Create the PyVista grid (PolyData)
+    pv_grid = pv.PolyData(vertices, faces.flatten())
+
+    # Add vertex colors to grid
+    pv_grid.point_data["Colors"] = colors  # Assign colors to points
+
+    return pv_grid
+
+def open3d_lineset_to_pyvista_lineset(lineset):
+    # Fetch the lines and colors from the Open3D lineset
+    lines = np.asarray(lineset.lines)
+    colors = np.asarray(lineset.colors)
+
+    # Convert the points from Vector3dVector to a numpy array
+    points = np.asarray(lineset.points)
+
+    # Calculate number of lines and number of points
+    n_lines = lines.shape[0]
+    n_points = points.shape[0]
+
+    # Initialize the cells array
+    cells = np.empty((n_lines, 3), dtype=int)
+
+    # First column is the number of points per line
+    cells[:, 0] = 2
+
+    # Remaining columns are indices into the points array
+    cells[:, 1:] = lines
+
+    # Initialize the colors array
+    cell_colors = np.empty((n_lines, 3), dtype=float)
+
+    # Each row is the RGB color for a line
+    cell_colors = colors
+
+    # Create the PyVista lineset (PolyData)
+    pv_lineset = pv.PolyData(points, cells)
+
+    # Add line colors to lineset
+    pv_lineset.cell_data["Colors"] = cell_colors  # Assign colors to cells (lines)
+
+    return pv_lineset
+
+
+def create_random_pyvista_line():
+    # Generate random start and end points for the line
+    start = np.random.rand(3) * 10
+    end = np.random.rand(3) * 10
+
+    # Create a single line cell
+    cells = np.array([2, 0, 1])
+
+    # Create the points array
+    points = np.vstack((start, end))
+
+    # Create the PyVista lineset (PolyData)
+    pv_lineset = pv.PolyData(points, cells)
+
+    return pv_lineset
+
+
+
+
+
+
+# Convert Open3D VoxelGrid to Open3D Trianglegrid
+triangle_grid = voxel_grid_to_mesh(grid, voxelSize)
+print('created mesh grid')
+# Convert Open3D grid and linesets to PyVista objects
+pv_grid = open3d_grid_to_pyvista_polydata_with_vertex_colors(triangle_grid)
+print('converted mesh into pyvista mesh')
+
+pv_linesets = [open3d_lineset_to_pyvista_lineset(lineset) for lineset in lines]
+print('converted lineset into pyvista lineset')
+
+
+
+# Create PyVista plotter
+plotter = pv.Plotter()
+
+# Add the mesh to the plotter
+plotter.add_mesh(pv_grid, scalars="Colors", lighting=True, rgb=True)
+
+# Create a random line
+pv_line = create_random_pyvista_line()
+
+
+# Add each line in the lineset to the plotter
+for pv_line in pv_linesets:
+    plotter.add_mesh(pv_line, scalars="Colors", lighting=True, rgb=True)
+
+# Enable Eye Dome Lighting (EDL)
+plotter.enable_eye_dome_lighting()
+
+light2 = pv.Light(light_type='cameralight', intensity=10)
+plotter.add_light(light2)
+
+# Set camera position to have a 45 degree azimuthal angle
+# You might need to adjust the position values depending on your specific use case
+camera_pos = (1,1,1)
+focal_point = (0,0,0)
+view_up = (0,0,1)  # This is the Y direction
+plotter.camera_position = [camera_pos, focal_point, view_up]
+# Set near clipping distance
+
+
+
+# Set parallel projection
+#plotter.camera.parallel_projection = True
+
+plotter.camera.position = [x * 3 for x in plotter.camera.position]
+
+plotter.reset_camera()
+
+
+
+# Show the plotter
+plotter.show()
+
+
+
+print("shown the tree block")

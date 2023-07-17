@@ -279,7 +279,7 @@ class CustomOctree:
         voxel_size = np.min(self.root.max_corner - self.root.min_corner) / (2 ** max_depth)
         voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size)
 
-        return voxel_grid, bounding_boxes
+        return voxel_grid, bounding_boxes, voxel_size
     
     #def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes):
         # Base case: if node is None, return
@@ -338,7 +338,7 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
         return color_mapping
 
 
-    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
+    voxel_grid, bounding_boxes, voxel_size = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
     
     view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
     
@@ -387,6 +387,8 @@ def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_le
 
     vis.get_view_control().set_lookat(octree.root.center)
     vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
+
+    return voxel_grid, linesets, voxel_size
 
 
 def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_level):

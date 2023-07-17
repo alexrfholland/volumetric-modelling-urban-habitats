@@ -11,6 +11,11 @@ df_branch_predictions = pd.read_csv('./data/branchPredictions - full.csv')
 df_attributes = pd.read_csv('./data/lerouxdata.csv')  # assuming you have this DataFrame
 
 
+try:
+    from .colorMaps import Colormap  # Attempt a relative import
+except ImportError:
+    from colorMaps import Colormap  # Fall back to an absolute import
+
 
 class Block:
     def __init__(self, pointcloud: Optional[Any] = None, name: str = '', conditions: Optional[List[Any]] = None, attributes: Optional[Dict[str, Any]] = None):
@@ -79,8 +84,8 @@ def control_level_size_df(df_attributes, control_level, size):
 for tree_block in tree_blocks:
     attr_df = control_level_size_df(df_attributes, tree_block.control_level, tree_block.size)
     
-    low_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict()
-    high_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict()
+    low_dict: Dict[str, float] = {k: float(v) for k, v in attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict().items()}
+    high_dict: Dict[str, float] = {k: float(v) for k, v in attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict().items()}
     
     tree_block.attributes = {
         'low': low_dict,
@@ -105,128 +110,11 @@ tree_blocks_dict = [
 tree_blocks_df = pd.DataFrame(tree_blocks_dict)
 
 # Pivot DataFrame
-pivot_df = tree_blocks_df.pivot(index='control_level', columns='size', values='tree_block')
-
-#use open3d to
-#convert to 0.5m voxel grids with attributes. The coordinates are the x,y,z columns. The atrributes are the columns: "isDeadOnly","isLateralOnly","isBoth","isNeither".
-#to populate the attributes, for each voxel:
-# create a dictionary with the keys being the four types of attributes (Branch.length, isDeadOnly, isLateralOnly, isBoth, isNeither)
-#1 find all branches that are within the bounds of the voxel
-#2 for each branch, check if it is dead only, lateral only, both, or neither
-#3 add the length of the branch to the corresponding attribute
-#4 once all branches have been allocated to each voxel, find the length of all branches of each type per voxel
-#5 have a dominant attribute colour that is the attribute with the highest length
-#6 assign colour to the voxel based on the dominant attribute
-""
-"""
-import open3d as o3d
-import numpy as np
-from typing import Tuple
-
-def add_branch_to_voxel(voxel: Dict[str, Any], branch: pd.Series):
-    if branch['Branch.type'] == 'dead' and branch['Branch.angle'] > 20:
-        category = 'isDeadOnly'
-    elif branch['Branch.type'] != 'dead' and branch['Branch.angle'] <= 20:
-        category = 'isLateralOnly'
-    elif branch['Branch.type'] == 'dead' and branch['Branch.angle'] <= 20:
-        category = 'isBoth'
-    else:
-        category = 'isNeither'
-    
-    voxel[category] += branch['Branch.length']
-
-            
-def compute_dominant_attribute(voxel: Dict[str, Any]) -> str:
-    categories = ['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']
-    lengths = [voxel[category] for category in categories]
-    dominant_index = np.argmax(lengths)
-    #print(voxel)
-    return categories[dominant_index]
-
-def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, float, float]:
-    colors = {
-        'isDeadOnly': (1, 0, 0),     # red
-        'isLateralOnly': (0, 1, 0),  # green
-        'isBoth': (0, 0, 1),         # blue
-        'isNeither': (1, 1, 1)       # white
-    }
-    return colors[dominant_attribute]
-
-def create_voxel_grid(tree_block: TreeBlock, voxel_size: float = 0.5) -> o3d.geometry.PointCloud:
-    # Define the voxel grid
-    voxel_grid: Dict[str, Dict[str, Any]] = {}
-
-    for _, branch in tree_block.otherData.iterrows():
-        # Determine voxel for this branch
-        voxel_x = np.floor(branch['x'] / voxel_size) * voxel_size
-        voxel_y = np.floor(branch['y'] / voxel_size) * voxel_size
-        voxel_z = np.floor(branch['z'] / voxel_size) * voxel_size
-        voxel_key = f"{voxel_x}_{voxel_y}_{voxel_z}"
-
-        # Initialize voxel if not already in grid
-        if voxel_key not in voxel_grid:
-            voxel_grid[voxel_key] = {
-                'x': voxel_x,
-                'z': voxel_y,
-                'y': voxel_z,
-                'isDeadOnly': 0,
-                'isLateralOnly': 0,
-                'isBoth': 0,
-                'isNeither': 0
-            }
-
-        # Add branch to voxel
-        add_branch_to_voxel(voxel_grid[voxel_key], branch)
-
-    # Compute dominant attribute and color for each voxel
-    for voxel in voxel_grid.values():
-        dominant_attribute = compute_dominant_attribute(voxel)
-        voxel['color'] = assign_color_to_dominant_attribute(dominant_attribute)
-
-    # Convert voxel grid to point cloud for visualization
-    point_cloud = o3d.geometry.PointCloud()
-    for voxel in voxel_grid.values():
-        point = np.array([voxel['x'], voxel['y'], voxel['z']])
-        color = voxel['color']
-        point_cloud.points.append(point)
-        point_cloud.colors.append(color)
-
-    return point_cloud
-
-
-
-def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, float, float]:
-    colors = {
-        'isDeadOnly': (1, 0, 0),     # Red: RGB value of (1, 0, 0)
-        'isLateralOnly': (0, 1, 0),  # Green: RGB value of (0, 1, 0)
-        'isBoth': (0, 0, 1),         # Blue: RGB value of (0, 0, 1)
-        'isNeither': (.25,.25,.25)       # White: RGB value of (1, 1, 1)
-    }
-    return colors[dominant_attribute]
-
-
-def create_voxel_grid_from_point_cloud(tree_block: TreeBlock, voxel_size: float = 0.5) -> o3d.geometry.VoxelGrid:
-    # Convert tree_block to a point cloud
-    point_cloud = create_voxel_grid(tree_block, voxel_size)
-
-    # Create a voxel grid from the point cloud
-    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(point_cloud, voxel_size)
-
-    return voxel_grid
-
-# Apply create_voxel_grid_from_point_cloud to each TreeBlock in tree_blocks
-for tree_block in tree_blocks:
-    voxel_grid = create_voxel_grid_from_point_cloud(tree_block)
-    o3d.visualization.draw_geometries([voxel_grid])
-"""
+pivot_df = tree_blocks_df.pivot(index='size', columns='control_level', values='tree_block')
 
 
 
 
-
-
-
-""
 import open3d as o3d
 import numpy as np
 import random
@@ -323,27 +211,8 @@ def select_voxels_for_synthesis(voxel_grid: Dict[str, Dict[str, Any]], n_voxels:
 
     return selected_voxels
 
-def voxel_grid_to_point_cloud(voxel_grid: Dict[str, Dict[str, Any]], point_size: float = 0.01) -> o3d.geometry.PointCloud:
-    points = []
-    colors = []
-    for voxel in voxel_grid.values():
-        points.append([voxel['x'], voxel['y'], voxel['z']])
-        colors.append(voxel['color'])
-    
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    pcd.colors = o3d.utility.Vector3dVector(colors)
-    pcd.scale(1/point_size, center=pcd.get_center())
-
-    return pcd
-
-def point_cloud_to_voxel_grid(pcd: o3d.geometry.PointCloud, voxel_size: float = 0.5) -> o3d.geometry.VoxelGrid:
-    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=voxel_size)
-    return voxel_grid
 
 
-# Define your desired point size
-point_size = 1
 
 def set_attributes_for_tree_block(tree_block, df_attributes):
     """Set the attribute values for a tree block based on its control level and size."""
@@ -378,21 +247,272 @@ def synthesize_voxels(tree_block, attributes_to_voxel):
         # After the synthesized type has been set, decide the voxel_type and color
         for voxel in tree_block.voxel_grid.values():
             voxel['voxel_type'] = voxel['synthesized_type'] if voxel['synthesized_type'] else compute_dominant_attribute(voxel)
-            voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
 
         print(f"Number of voxels to convert to {synthesized_type}: {number_of_voxels}")
 
+def adjust_dead_voxel_count(tree_block: TreeBlock, attr_df: pd.DataFrame):
+    total_voxel_count = len(tree_block.voxel_grid)
+
+    dead_branch_percent_low = float(tree_block.attributes['low']['% of dead branches in canopy'])
+    dead_branch_percent_high = float(tree_block.attributes['high']['% of dead branches in canopy'])
+    dead_branch_percent = random.uniform(dead_branch_percent_low, dead_branch_percent_high)
+
+    print(f'expected % dead branches in {tree_block} is {dead_branch_percent}')
+
+    desired_dead_voxel_count = round(total_voxel_count * (dead_branch_percent / 100))
+
+    current_dead_voxel_count = sum(voxel['voxel_type'] in ['isDeadOnly', 'isBoth'] for voxel in tree_block.voxel_grid.values())
+
+    print(f"current % dead branches: {(current_dead_voxel_count/total_voxel_count)*100}")
+    print(f"Total voxels: {total_voxel_count}")
+    print(f"Desired dead voxels: {desired_dead_voxel_count}")
+    print(f"Current dead voxels: {current_dead_voxel_count}")
+
+
+
+    # If the current count is less than desired, convert neither and lateral voxels to dead and both
+    if current_dead_voxel_count < desired_dead_voxel_count:
+        # First go with isNone type
+        for voxel in tree_block.voxel_grid.values():
+            if voxel['voxel_type'] == 'isNeither' and current_dead_voxel_count < desired_dead_voxel_count:
+                #print(f"Converting a voxel from 'isNeither' to 'isDeadOnly'")
+                voxel['voxel_type'] = 'isDeadOnly'
+                current_dead_voxel_count += 1
+
+        # Then go to isLateral type
+        for voxel in tree_block.voxel_grid.values():
+            if voxel['voxel_type'] == 'isLateralOnly' and current_dead_voxel_count < desired_dead_voxel_count:
+                #print(f"Converting a voxel from 'isLateralOnly' to 'isBoth'")
+                voxel['voxel_type'] = 'isBoth'
+                current_dead_voxel_count += 1
+
+    # If the current count is higher than desired, convert dead voxels to neither
+    elif current_dead_voxel_count > desired_dead_voxel_count:
+        # First start with isBoth type
+        for voxel in tree_block.voxel_grid.values():
+            if voxel['voxel_type'] == 'isBoth' and current_dead_voxel_count > desired_dead_voxel_count:
+                #print(f"Converting a voxel from 'isBoth' to 'isLateralOnly'")
+                voxel['voxel_type'] = 'isLateralOnly'
+                current_dead_voxel_count -= 1
+
+        # Then go to isDead type
+        for voxel in tree_block.voxel_grid.values():
+            if voxel['voxel_type'] == 'isDeadOnly' and current_dead_voxel_count > desired_dead_voxel_count:
+                #print(f"Converting a voxel from 'isDeadOnly' to 'isNeither'")
+                voxel['voxel_type'] = 'isNeither'
+                current_dead_voxel_count -= 1
+
+    print(f"Adjusted dead voxels to: {current_dead_voxel_count}")
+
+
+def assign_voxel_colors(tree_block: TreeBlock):
+    # Create a colormap instance (using your default json file)
+    cmap = Colormap()
+
+    # Define a dictionary to map voxel types to colors
+    voxel_type_to_color = {
+        'isNeither': cmap.get_categorical_colors(1, 'MyColorMap')[0],  # replace 'MyColorMap' with the actual colormap name
+        'isLateralOnly': cmap.get_categorical_colors(1, 'MyColorMap')[0],
+        'isDeadOnly': cmap.get_categorical_colors(1, 'MyColorMap')[0],
+        'isBoth': cmap.get_categorical_colors(1, 'MyColorMap')[0],
+    }
+
+    # Assign colors to voxels
+    for voxel in tree_block.voxel_grid.values():
+        voxel_type = voxel['voxel_type']
+        voxel['color'] = voxel_type_to_color[voxel_type]
+def add_ground_cover_voxels(tree_block, ground_cover_attributes, voxel_size=0.5):
+    def get_center_of_bounding_box(point_cloud):
+        """Calculates and returns the center of the bounding box of the given point cloud."""
+        min_coords = np.min(point_cloud, axis=0)
+        max_coords = np.max(point_cloud, axis=0)
+        center = (min_coords + max_coords) / 2
+        return center
+    
+    def round_to_increment(value, increment):
+        return round(value / increment) * increment
+
+    def add_log_voxel(log_length, x, y, z, direction, synthesized_type):
+        for i in range(log_length):
+            if direction == 'x':
+                log_voxel = (x + i * voxel_size, y, z)
+            else:  # direction == 'z'
+                log_voxel = (x, y, z + i * voxel_size)
+
+            if log_voxel not in tree_block.voxel_grid:
+                new_voxel = {
+                    'x': log_voxel[0],
+                    'y': log_voxel[1],
+                    'z': log_voxel[2],
+                    'synthesized_type': synthesized_type,
+                    'voxel_type': synthesized_type,
+                }
+                tree_block.voxel_grid[log_voxel] = new_voxel
+    
+    tree_block_center = (0,0,0)
+
+    for attribute, synthesized_type in ground_cover_attributes:
+        low = float(tree_block.attributes['low'][attribute])
+        high = float(tree_block.attributes['high'][attribute])
+        value = random.uniform(low, high)
+
+        # If the attribute is litter_cover, it's a percentage
+        if attribute == '% of litter cover (10 m radius of tree)':
+            total_voxels = (10/voxel_size)**2  # Total voxels in the 10m x 10m area
+            value = (value / 100) * total_voxels
+            print(f"For attribute {attribute}, {value} of ground should be covered)")
+        else:
+            print(f"For attribute {attribute}, {value} voxels should be present)")
+
+
+        number_of_voxels = round(value)
+        print(number_of_voxels)
+        print(f'this is approximately {number_of_voxels} voxels.')
+
+
+        created_voxels = 0
+
+        # Iterate over the number of voxels
+        for _ in range(number_of_voxels):
+            # Get a random point within a 10m radius, clamping the coordinates to the nearest voxel increment
+            x = round_to_increment(random.uniform(tree_block_center[0]-10, tree_block_center[0]+10), voxel_size)
+            y = 0
+            z = round_to_increment(random.uniform(tree_block_center[1]-10, tree_block_center[1]+10), voxel_size)
+
+            if (x, y, z) not in tree_block.voxel_grid:
+                # Create a new voxel if it doesn't exist already
+                new_voxel = {
+                    'x': x,
+                    'y': y,
+                    'z': z,
+                    'synthesized_type': synthesized_type,
+                    'voxel_type': synthesized_type,
+                }
+
+                tree_block.voxel_grid[(x, y, z)] = new_voxel
+
+                created_voxels += 1
+
+                # If this is a log voxel, add additional log voxels in the y or z direction
+                if synthesized_type == 'fallen_logs':
+                    log_length = random.randint(1, 3)
+                    direction = random.choice(['x', 'z'])
+                    add_log_voxel(log_length, x, y, z, direction, synthesized_type)
+
+        print(f"Successfully created {created_voxels} voxels for attribute {attribute}.")
+
+
+def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, float, float]:
+    """colors = {
+        'isDeadOnly': (1, 0, 0),     # Red: RGB value of (1, 0, 0) ""pretty high intensity colour"
+        'isLateralOnly': (0, 1, 0),  # Green: RGB value of (0, 1, 0) "low intensity colour - a medium grey"
+        'isBoth': (0, 0, 1),         # Blue: RGB value of (0, 0, 1) "a very high intensity colour"
+        'isNeither': (.25, .25, .25), # Gray: RGB value of (.25, .25, .25) "lowest colour - a lighter grey"
+        'hollows': (1, 1, 0),        # Yellow: RGB value of (1, 1, 0) "the highest intensity colour"
+        'epiphytes': (0, 1, 1),      # Cyan: RGB value of (0, 1, 1) "a very high intensity colour"
+        'peeling_bark': (1, 0, 1)    # Magenta: RGB value of (1, 0, 1) "moderate intesnity coloyr - a dark grey"
+    }"""
+
+    """    colors = {
+        'isNeither': (0.8, 0.8, 0.8),  # Light gray
+        'isLateralOnly': (0.6, 0.6, 0.6),  # Medium gray
+
+        # Picking color from 'inferno' colormap for diversity and not grey
+        'peeling_bark': (0.795666, 0.220803, 0.339161),  # Moderate intensity
+
+        # More intense colors from 'viridis' colormap
+        'isDeadOnly': (0.152566, 0.392007, 0.682171),  # Moderately intense
+        'isBoth': (0.122312, 0.633153, 0.530398),  # Highly intense
+
+        # From 'plasma' colormap
+        'epiphytes': (0.827018, 0.184201, 0.422179),  # Moderately intense color
+
+        # Most intense color from 'viridis' colormap
+        'hollows': (0.280046, 0.004866, 0.329415),  # Highly intense color
+    }"""
+
+    colors = {
+        'isNeither': (0.8, 0.8, 0.8),  # Light gray
+        'isLateralOnly': (0.4, 0.4, 0.4),  # Dark gray
+
+        # Colors from 'viridis' colormap
+        'peeling_bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
+        'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+        'isBoth': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
+
+        # Vivid colors
+        'hollows': (1, 0, 1),  # Vivid pink
+        'epiphytes': (0, 1, 1),  # Vivid cyan
+
+        #ground
+        'fallen_logs' :  (1, 0.5, 0), #Vivid Orange
+        'litter_cover' : (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
+    }
+
+
+
+
+    return colors.get(dominant_attribute, (1, 1, 1))  # Default color to white (1, 1, 1) if key not found
+
+
 
 def convert_voxel_grid_to_point_cloud(tree_block, point_size):
+    def voxel_grid_to_mesh(voxel_grid_3d: o3d.geometry.VoxelGrid, voxel_size: float):
+        voxels=voxel_grid_3d.get_voxels()
+        vox_mesh=o3d.geometry.TriangleMesh()
+
+        for v in voxels:
+            cube=o3d.geometry.TriangleMesh.create_box(width=1, height=1,
+            depth=1)
+            cube.paint_uniform_color(v.color)
+            cube.translate(v.grid_index, relative=False)
+            vox_mesh+=cube
+
+        # Scale by the voxel size
+        vox_mesh.scale(voxel_size, center=(0,0,0))
+
+        # Merge close vertices to ensure the mesh is manifold
+        #vox_mesh.merge_close_vertices(0.0000001)
+
+        # Compute vertex normals for shading
+        vox_mesh.compute_vertex_normals()
+
+        return vox_mesh
+
+
+    def voxel_grid_to_point_cloud(voxel_grid: Dict[str, Dict[str, Any]], point_size: float = 0.01) -> o3d.geometry.PointCloud:
+        points = []
+        colors = []
+        for voxel in voxel_grid.values():
+            voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
+            #points.append([voxel['x'], voxel['y'], voxel['z']])
+            points.append([voxel['x'], voxel['z'], voxel['y']])
+
+            colors.append(voxel['color'])
+        
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+        pcd.scale(1/point_size, center=pcd.get_center())
+
+        return pcd
+
+    def point_cloud_to_voxel_grid(pcd: o3d.geometry.PointCloud, voxel_size: float = 0.5) -> o3d.geometry.VoxelGrid:
+        voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=voxel_size)
+        return voxel_grid
+
     """Convert the voxel grid of a tree block to a point cloud."""
     # Generate a point cloud and visualize it
     pcd = voxel_grid_to_point_cloud(tree_block.voxel_grid, point_size)
     
     # Convert point cloud to voxel grid
-    voxel_grid_3d = point_cloud_to_voxel_grid(pcd, 0.5)
+    voxel_grid_3d = point_cloud_to_voxel_grid(pcd, .5)
+
+    voxel_mesh = voxel_grid_to_mesh(voxel_grid_3d, voxel_size)
 
     # Return the 3D voxel grid
-    return voxel_grid_3d
+    return voxel_mesh
 
 
 # Attributes to convert to voxels
@@ -404,9 +524,62 @@ attributes_to_voxel = [
 
 # Define your desired point size
 point_size = 1
+voxel_size = .25
+
+print(pivot_df)
+#processedBlocks = tree_blocks
+processedBlocks = [pivot_df.loc['large', 'minimal'], pivot_df.loc['large', 'maximum']]
+
+def finalise_colors(tree_block):
+    def voxel_grid_to_point_cloud(voxel_grid: Dict[str, Dict[str, Any]]):
+        points = []
+        colors = []
+        for voxel in voxel_grid.values():
+            voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
+            points.append([voxel['x'], voxel['y'], voxel['z']])
+            colors.append(voxel['color'])
+
+        return points, colors
+
+    """Finalise colors of a voxel grid of a tree block and return the point cloud, points and colors."""
+    # Generate a point cloud
+    points, colors = voxel_grid_to_point_cloud(tree_block)
+
+    # Save points and colors to the tree block object
+    tree_block.points = points
+    tree_block.colors = colors
+
+
+
+import pyvista as pv
+
+def open3d_mesh_to_pyvista_polydata_with_vertex_colors(mesh):
+    # Fetch the vertices, faces and colors from the Open3D mesh
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    colors = np.asarray(mesh.vertex_colors)
+
+    # Convert Open3D's faces format to PyVista's faces format
+    faces = np.empty((triangles.shape[0], 4), dtype=np.int64)
+    faces[:, 0] = 3
+    faces[:, 1:] = triangles
+
+    # Create the PyVista mesh (PolyData)
+    pv_mesh = pv.PolyData(vertices, faces.flatten())
+
+    # Add vertex colors to mesh
+    pv_mesh.point_data["Colors"] = colors  # Assign colors to points
+
+    return pv_mesh
+
+
+
+
+
+
 
 # Apply create_voxel_grid and additional processing to each TreeBlock in tree_blocks
-for tree_block in tree_blocks:
+for tree_block in processedBlocks:
     # Create voxel grid for the tree block
     tree_block.voxel_grid = create_voxel_grid(tree_block)
 
@@ -416,15 +589,109 @@ for tree_block in tree_blocks:
     # Synthesize voxels for the tree block
     synthesize_voxels(tree_block, attributes_to_voxel)
 
+    # Adjust dead voxel count for the tree block
+    expected_dead_voxels = adjust_dead_voxel_count(tree_block, df_attributes)
+
+    # Add ground cover
+    ground_cover_attributes = [
+    ('Number of fallen logs (> 10 cm DBH 10 m radius of tree)', 'fallen_logs'),
+    ('% of litter cover (10 m radius of tree)', 'litter_cover'),
+    ]
+    add_ground_cover_voxels(tree_block, ground_cover_attributes, voxel_size)
+
+    #asign colours
+    #finalise_colors(tree_block)
+
+
     # Convert the voxel grid of the tree block to a point cloud
     voxel_grid_3d = convert_voxel_grid_to_point_cloud(tree_block, point_size)
 
+    
+    #visualize_treeblock_with_voxelization(tree_block,0.5)
+
+    print("converted the tree block into an open3d mesh")
+    
+
+
     # Visualize voxel grid
-    o3d.visualization.draw_geometries([voxel_grid_3d])
+    # Convert to PyVista mesh
+    pv_mesh = open3d_mesh_to_pyvista_polydata_with_vertex_colors(voxel_grid_3d)
+
+    print("converted the tree block into a pyvista mesh")
+
+
+    # Create PyVista plotter
+    plotter = pv.Plotter()
+    plotter.window_size = (1500, 1500)
+
+
+    # Add the mesh to the plotter
+    plotter.add_mesh(pv_mesh, scalars="Colors", lighting=True, rgb=True)
+    print(pv_mesh)
+
+    light = pv.Light(light_type='scenelight', intensity=1)
+    #plotter.add_light(light)
+
+    """    # Create a light and modify its properties
+    light = pv.Light(intensity=1.0)  # increase intensity
+    light.ambient = 10  # increase ambient light
+    light.diffuse = 10  # increase diffuse light
+    light.specular = 0  # increase specular light"""
+    # Add the light to the plotter
+    #plotter.add_light(light)
+
+    # Add a camera light
+    light2 = pv.Light(light_type='cameralight', intensity=2)
+    plotter.add_light(light2)
+
+
+    # Enable Eye Dome Lighting (EDL)
+    plotter.enable_eye_dome_lighting()
+
+    # Set camera position to have a 45 degree azimuthal angle
+    # You might need to adjust the position values depending on your specific use case
+    #camera_pos = (1,1,1)
+    camera_pos = (1,1,.5)
+
+    focal_point = (0,0,0)
+    
+    view_up = (0,0,1)  # This is the Y direction
+    plotter.camera_position = [camera_pos, focal_point, view_up]
+    # Set near clipping distance
+
+    plotter.show(auto_close=False)  # Prevent plotter from closing after show
+    img = plotter.screenshot('your_file_name.png')  # Save screenshot to file
+
+    plotter.close()
+
+
+
+
+    # Set parallel projection
+    plotter.camera.parallel_projection = True
+
+    plotter.camera.position = [x * 3 for x in plotter.camera.position]
+
+    plotter.reset_camera()
+
+
+
+    # Show the plotter
+    plotter.show()
+
+
+    print("shown the tree block")
+
+   # print(f"\nTree Block: {tree_block}")
+   # print(f"Total number of voxels: {total_voxels}")
+   # print(f"Number of dead voxels (isDead and isBoth): {dead_voxels}")
+   # print(f"Expected number of dead voxels (based on % dead in canopy): {expected_dead_voxels}")
+    #print(f"Number of voxels changed: {tree_block.voxels_changed}")
 
 
 
 def print_voxel_stats(tree_blocks):
+    print(tree_block)
     for tree_block in tree_blocks:
         voxel_types = [voxel['voxel_type'] for voxel in tree_block.voxel_grid.values()]
         voxel_counter = Counter(voxel_types)
@@ -437,60 +704,7 @@ def print_voxel_stats(tree_blocks):
 # Now you can call this function after creating and processing all tree_blocks:
 print_voxel_stats(tree_blocks)
 
-
-"""
-# Apply create_voxel_grid to each TreeBlock in tree_blocks
-for tree_block in tree_blocks:
-    # Changes made here. Assigning the voxel grid to tree_block
-    tree_block.voxel_grid = create_voxel_grid(tree_block)
-
-    attr_df = control_level_size_df(df_attributes, tree_block.control_level, tree_block.size)
-    low_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} low'].to_dict()
-    high_dict: Dict[str, float] = attr_df.set_index('Attribute')[f'{tree_block.control_level} high'].to_dict()
-
-    tree_block.attributes = {
-        'low': low_dict,
-        'high': high_dict
-    }
-
-    attributes_to_voxel = [
-        ('Number of hollows', 'hollows'),
-        ('Number of epiphytes', 'epiphytes'),
-        ('% of peeling bark cover on trunk/limbs', 'peeling_bark')
-    ]
-
-    for attribute, synthesized_type in attributes_to_voxel:
-        low = float(tree_block.attributes['low'][attribute])
-        high = float(tree_block.attributes['high'][attribute])
-        value = random.uniform(low, high)
-
-        if attribute == '% of peeling bark cover on trunk/limbs':
-            number_of_voxels = round(len(tree_block.voxel_grid) * (value / 100))
-        else:
-            number_of_voxels = round(value)
-
-        selected_voxels = select_voxels_for_synthesis(tree_block.voxel_grid, number_of_voxels)
-
-        # Assign the synthesized type to the selected voxels
-        for voxel in selected_voxels:
-            voxel['synthesized_type'] = synthesized_type
-
-        # After the synthesized type has been set, decide the voxel_type and color
-        for voxel in tree_block.voxel_grid.values():
-            voxel['voxel_type'] = voxel['synthesized_type'] if voxel['synthesized_type'] else compute_dominant_attribute(voxel)
-            voxel['color'] = assign_color_to_dominant_attribute(voxel['voxel_type'])
-
-        print(f"Number of voxels to convert to {synthesized_type}: {number_of_voxels}")
-
-    # Generate a point cloud and visualize it
-    pcd = voxel_grid_to_point_cloud(tree_block.voxel_grid, point_size)
-
-    # Convert point cloud to voxel grid
-    voxel_grid_3d = point_cloud_to_voxel_grid(pcd, 0.5)
-
-    # Visualize voxel grid
-    o3d.visualization.draw_geometries([voxel_grid_3d])
-"""
+print("done")
 
 """
 Step 1: Read the CSV Files

@@ -1,20 +1,33 @@
-import open3d as o3d
+import pyvista as pv
+import numpy as np
 
-# Load the mesh
-mesh = o3d.io.read_triangle_mesh("output_mesh.ply")
+def create_dummy_line():
+    # Create two points for the line
+    point1 = [np.random.randint(10), np.random.randint(10), np.random.randint(10)]
+    point2 = [np.random.randint(10), np.random.randint(10), np.random.randint(10)]
 
-# Compute the normals for shading
-mesh.compute_vertex_normals()
+    # Print the points to console
+    print(f"Creating line from {point1} to {point2}")
 
-# Create a visualizer
-vis = o3d.visualization.Visualizer()
-vis.create_window()
+    # Create a line cell
+    lines = np.array([[2, 0, 1]])
 
-# Add the mesh to the visualizer
-vis.add_geometry(mesh)
+    # Create the points array
+    points = np.array([point1, point2])
 
-# Start the visualization
-vis.run()
+    # Create a PolyData object with the points and lines
+    line = pv.PolyData(points, lines)
 
-# Destroy the visualizer window after visualization ends
-vis.destroy_window()
+    return line
+
+# Create the dummy line
+dummy_line = create_dummy_line()
+
+# Create PyVista plotter
+plotter = pv.Plotter()
+
+# Add the dummy line to the plotter
+plotter.add_mesh(dummy_line, color="red", line_width=5)
+
+# Show the plotter
+plotter.show()
