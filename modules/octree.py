@@ -113,6 +113,7 @@ import open3d as o3d
 import numpy as np
 import pandas as pd
 import random
+import matplotlib.cm as cm
 
 try:
     from . import glyphmapping  # Attempt a relative import
@@ -120,6 +121,7 @@ except ImportError:
     import glyphmapping  # Fall back to an absolute import
 
 print("start")
+from matplotlib.colors import ListedColormap
 
 
 import pyvista as pv
@@ -133,12 +135,23 @@ class OctreeNode:
         self.points = points
         self.attributes = attributes
         self.block_ids = block_ids
-        self.dominant_attribute, self.dominant_color, self.originalColor = self.calculate_dominant_attribute_and_color()
         self.center, self.extent = self.get_geos()
         self.parent = None
 
     def calculate_dominant_attribute_and_colors(self):
-        return ('isDeadOnly', [1, 0, 0], [1,0,0])
+        attribute_columns = ['Rf', 'Gf', 'Bf']
+        
+        # Convert attributes list to pandas DataFrame
+        df = pd.DataFrame(self.attributes)
+
+        # Check if 'Rf', 'Gf', 'Bf' exist in the DataFrame columns
+        if all(column in df.columns for column in attribute_columns):
+            # Compute mode (most common color) along each column and store result as list
+            dominant_color = df[attribute_columns].mode().values[0].tolist()
+
+            return 'isColorDominant', dominant_color, dominant_color
+        else:
+            return 'isDeadOnly', [1, 0, 0], [1,0,0]
 
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
@@ -222,6 +235,7 @@ class CustomOctree:
                 leaf_nodes.append(node)
             elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
                 if len(set(node.block_ids)) == 1 and not is_parent_single_block(node):  # Single block nodes
+                    print(node.block_ids)
                     single_block_nodes.append(node)
             # Recurse for children
             for child in node.children:
@@ -235,39 +249,6 @@ class CustomOctree:
             "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
         }
     
-    def get_nodes_for_visualization(self, min_offset_level, max_offset_level):
-        single_block_nodes = []
-        leaf_nodes = []
-
-        # Helper method to check if parent is a single block node
-        def is_parent_single_block(node):
-            parent = node.parent
-            while parent is not None:
-                if len(set(parent.block_ids)) == 1:
-                    return True
-                parent = parent.parent
-            return False
-
-        # Base function to traverse and classify nodes
-        def traverse(node):
-            if node is None:
-                return
-            if node.depth == self.max_depth:  # Leaf node
-                leaf_nodes.append(node)
-            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
-                if len(set(node.block_ids)) == 1 and not is_parent_single_block(node):  # Single block nodes
-                    single_block_nodes.append(node)
-            # Recurse for children
-            for child in node.children:
-                traverse(child)
-
-        # Kick off the traversal
-        traverse(self.root)
-
-        return {
-            "single_block_nodes": [(node, self.compute_node_size(node.depth)) for node in single_block_nodes],
-            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
-        }
         
     def get_nodes_for_visualization2(self, min_offset_level, max_offset_level):
         single_block_nodes = []
@@ -283,6 +264,7 @@ class CustomOctree:
             elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
                 if len(set(node.block_ids)) == 1:  # Single block nodes
                     single_block_nodes.append(node)
+                    print(node.block_ids)
                 elif len(set(node.block_ids)) > 1:  # Multiple block nodes
                     multiple_block_nodes.append(node)
             # Recurse for children
@@ -316,56 +298,94 @@ class CustomOctree:
                          1: [0, 1, 0]}  # Green for block_id 1
         return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
     
+
     def visualize_octree_nodes(self):
         # Extract nodes from octree using the correct function
         node_data = self.get_nodes_for_visualization(min_offset_level=0, max_offset_level=10)
-        
+
+        print(f'length of single block nodes is {len(node_data["single_block_nodes"])}')
+
         # Process single_block_nodes: outline cubes
-        """
-        What's happening here:
-
-        node_data["single_block_nodes"] contains the list of (node, size) pairs for single block nodes. 
-        We're going to extract the individual nodes and their sizes from this list.
-        
-        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]:
-            Here, we're using a list comprehension to iterate over each (node, size) pair in node_data["single_block_nodes"].
-            entry[0] refers to the node in each (node, size) pair. Therefore, this line creates a list of all the nodes.
-        
-        sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]:
-            Similar to the above, but instead of the node, we're extracting the size for each node using entry[1].
-        
-        positions_single_block = np.array([node.center for node in single_block_nodes]):
-            Here, we're creating a numpy array of the centers of all the nodes in single_block_nodes.
-            The node.center is an attribute of the node which gives its center position in space.
-        
-        depths_single_block = np.array([node.depth for node in single_block_nodes]):
-            Similarly, we're creating a numpy array, but this time it's of the depths of all the nodes in single_block_nodes.
-        
-        In simpler terms: We're organizing the data in node_data["single_block_nodes"] 
-        into separate lists/arrays for easy access to the nodes' attributes (position, depth) and their computed sizes.
-        """
-
-
-
         single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]
         sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]
         positions_single_block = np.array([node.center for node in single_block_nodes])
-        depths_single_block = np.array([node.depth for node in single_block_nodes])
-        max_depth_single_block = max(depths_single_block)
-        colors_single_block = depths_single_block / max_depth_single_block
-        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colors_single_block, solid=False, line_width=5, cmap='cool')
+        
+        # Use blockId to create colormap
+        blockIds_single_block = np.array([node.block_ids[0] for node in single_block_nodes])
+
+        print(f'single block node block ids: {blockIds_single_block}')
+        print(f'length of single block node block ids: {len(blockIds_single_block)}')
+        
+        # Create a discrete colormap
+        unique_block_ids = np.unique(blockIds_single_block)
+        colors = cm.rainbow(np.linspace(0, 1, len(unique_block_ids)))
+        cmap = ListedColormap(colors)
+        
+        # Map each unique block ID to a unique value in range 0 to number of unique IDs
+        block_id_to_index = {id: i for i, id in enumerate(unique_block_ids)}
+
+        # Map each block ID in the list to its corresponding index
+        blockId_indices = np.array([block_id_to_index[id] for id in blockIds_single_block])
+        
+        # Use these indices to get colors from the colormap
+        colors_single_block = cmap(blockId_indices)
+
+        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colors_single_block, solid=False, line_width=10, cmap=cmap)
         
         # Process leaf_nodes: solid cubes
         leaf_nodes = [entry[0] for entry in node_data["leaf_nodes"]]
         sizes_leaf = [entry[1] for entry in node_data["leaf_nodes"]]
         positions_leaf = np.array([node.center for node in leaf_nodes])
-        depths_leaf = np.array([node.depth for node in leaf_nodes])
-        max_depth_leaf = max(depths_leaf)
-        colors_leaf = depths_leaf / max_depth_leaf
-        glyphmapping.add_glyphs_to_visualiser(positions_leaf, sizes_leaf, colors_leaf, solid=True)
+        
+        # Use dominant_color for colors (array of RGB colours, values between 0-1)
+        dominant_colors = [node.calculate_dominant_attribute_and_colors()[1] for node in leaf_nodes]
+        colors_leaf = np.array(dominant_colors)
+        
+        # Add glyphs to the visualiser with the dominant colors
+        glyphmapping.add_voxels_with_rgba_to_visualiser(positions_leaf, sizes_leaf, colors_leaf)
         
         # Show the glyphs using pyvista
-        glyphmapping.plot_glyphs()
+        glyphmapping.plot()
+
+
+
+    def visualize_octree_nodesb(self):
+        # Extract nodes from octree using the correct function
+        node_data = self.get_nodes_for_visualization(min_offset_level=0, max_offset_level=10)
+
+        print(f'length of single block nodes is {len(node_data["single_block_nodes"])}')
+
+        # Process single_block_nodes: outline cubes
+        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]
+        sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]
+        positions_single_block = np.array([node.center for node in single_block_nodes])
+        
+        # Use blockId to create colormap
+        blockIds_single_block = np.array([node.block_ids[0] for node in single_block_nodes])
+
+        print(f'single block node block ids: {blockIds_single_block}')
+        print(f'length of single block node block ids: {len(blockIds_single_block)}')
+        cmap_single_block = cm.get_cmap('rainbow')
+        colors_single_block = cmap_single_block(blockIds_single_block / blockIds_single_block.max())
+        
+        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colors_single_block, solid=False, line_width=10, cmap='rainbow')
+        
+        # Process leaf_nodes: solid cubes
+        leaf_nodes = [entry[0] for entry in node_data["leaf_nodes"]]
+        sizes_leaf = [entry[1] for entry in node_data["leaf_nodes"]]
+        positions_leaf = np.array([node.center for node in leaf_nodes])
+        
+        # Use dominant_color for colors (array of RGB colours, values between 0-1)
+        dominant_colors = [node.calculate_dominant_attribute_and_colors()[1] for node in leaf_nodes]
+        colors_leaf = np.array(dominant_colors)
+        
+        # Add glyphs to the visualiser with the dominant colors
+        glyphmapping.add_voxels_with_rgba_to_visualiser(positions_leaf, sizes_leaf, colors_leaf)
+        
+        # Show the glyphs using pyvista
+        glyphmapping.plot()
+
+    
 
 def tree_block_processing(coordinates_list):
     """
@@ -429,6 +449,8 @@ def tree_block_processing(coordinates_list):
     points = combined_data[['x', 'y', 'z']].to_numpy()
     attributes = define_attributes(combined_data)
     block_ids = combined_data['Tree.ID'].tolist()
+
+    print(block_ids)
 
     return points, attributes, block_ids
 

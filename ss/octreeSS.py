@@ -115,7 +115,7 @@ import pandas as pd
 import random
 
 try:
-    from .boxlineset import BoundingBoxToLineSet  # Attempt a relative import
+    from ..modules.boxlineset import BoundingBoxToLineSet  # Attempt a relative import
 except ImportError:
     from boxlineset import BoundingBoxToLineSet  # Fall back to an absolute import
 

@@ -55,7 +55,7 @@ import numpy as np
 
 
 import modules.convertSiteToBlocks as ConvertSites
-import modules.octreeSS as Octree
+import ss.octreeSS as Octree
 
 # File path to the LiDAR data
 file_path = 'data/sites/park.parquet'

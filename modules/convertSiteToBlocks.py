@@ -107,7 +107,7 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
         "element_type == 0",
         "element_type == 1 and horizontality == 0",
         "element_type == 1 and horizontality == 1",
-        "element_type ==x 1 and horizontality == 2",
+        "element_type == 1 and horizontality == 2",
         "element_type == 2",
         "element_type == 3",
         "element_type == 4"
@@ -130,6 +130,7 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
     
     # Enhance colors with illuminance
     enhanced_colors = enhance_colors(colors, np.array(data['Illuminance (PCV)']))
+
     
     # Assign the color columns directly to the data DataFrame
     data['r'] = enhanced_colors[:, 0]
@@ -137,16 +138,18 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
     data['b'] = enhanced_colors[:, 2]
     
     # Get the attribute columns
-    attributes_columns = data.columns.difference(['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID'])
+    attributes_columns = data.columns.difference(['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID','Rf','Bf','Gf'])
     
     # Order columns
-    ordered_columns = ['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID'] + list(attributes_columns)
-    ordered_columns = ['X', 'Y', 'Z', 'blockID', 'r', 'g', 'b'] + list(attributes_columns)
+    ordered_columns = ['X', 'Y', 'Z', 'r', 'g', 'b', 'blockID','Rf','Bf','Gf'] + list(attributes_columns)
 
     result = data[ordered_columns]
     
+    print(result)
     # Return the DataFrame
     return result
+
+
 
 def select_random_ground_points(processed_data, n_points):
     """
@@ -184,6 +187,9 @@ def convertToVoxelGrid(data):
     # Extract coordinates and colors
     coordinates = data[['X', 'Y', 'Z']].values
     colors = data[['r', 'g', 'b']].values
+
+    #get columns 'Rf, Gf, Bf' in data
+    colors = data[['Rf','Gf','Bf']].values
 
     # Create point cloud
     pcd = o3d.geometry.PointCloud()

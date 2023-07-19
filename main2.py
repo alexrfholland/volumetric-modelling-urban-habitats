@@ -79,14 +79,9 @@ lidar_points = lidar_dataframe[['X', 'Y', 'Z']].to_numpy()
 lidar_block_ids = lidar_dataframe['blockID'].tolist()
 lidar_attributes = lidar_dataframe[attribute_cols].to_dict('records')
 
-
 # Process tree block data for a specified number of trees
 tree_count = 16  # Specify the number of tree blocks to process
-#selected_data = lidar_dataframe.loc[lidar_dataframe['element_type'] == 3, ['X', 'Y', 'Z']]
 selected_data = lidar_dataframe.loc[lidar_dataframe['element_type'].isin([2, 4]), ['X', 'Y', 'Z']]
-print('test')
-print(selected_data)
-#selected_data = [[0,0,0],[0,1,1]]
 treeCoords = ConvertSites.select_random_ground_points(selected_data, tree_count)
 tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing(treeCoords)
 
@@ -95,10 +90,14 @@ combined_points = np.concatenate([lidar_points, tree_points])
 combined_attributes = lidar_attributes + tree_attributes
 combined_block_ids = lidar_block_ids + tree_block_ids
 
+print(f"Creating Octree")
+
 # Create Octree
 print(lidar_points)
 #octree = Octree.CustomOctree(lidar_points, lidar_attributes, lidar_block_ids, max_depth)
-octree = Octree.CustomOctree(combined_points, combined_attributes, combined_block_ids, max_depth)
+#octree = Octree.CustomOctree(combined_points, combined_attributes, combined_block_ids, max_depth)
+octree = Octree.CustomOctree(lidar_points, lidar_attributes, lidar_block_ids, max_depth)
+
 print(f"Created Octree with max depth {max_depth}")
 
 octree.visualize_octree_nodes()

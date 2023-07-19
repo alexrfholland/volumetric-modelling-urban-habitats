@@ -1,36 +1,45 @@
-import pandas as pd
+import numpy as np
+import pyvista as pv
 
-from typing import List, Dict, Any, Optional
-
-
-# read the csv files
-df_tree_mapping = pd.read_csv('./data/treemapping.csv')
-df_branch_predictions = pd.read_csv('./data/branchPredictions - full.csv')
-df_attributes = pd.read_csv('./data/lerouxdata.csv')  # assuming you have this DataFrame
-
-
-
-def control_level_size_df(df_attributes, control_level, size):
+def visualize_voxel_grid_with_pyvista(positions, sizes, colors, base_voxel_size=1.0):
     """
-    Listed ittributes are:
-    Diameter at breast height (DBH cm)
-    Height (m)
-    Canopy width (m)
-    Number of epiphytes
-    Number of hollows
-    Number of fallen logs (> 10 cm DBH 10 m radius of tree)
-    % of peeling bark cover on trunk/limbs
-    % of dead branches in canopy
-    % of litter cover (10 m radius of tree)
+    Visualizes a voxel grid with PyVista.
+    
+    Args:
+    - positions (list): A list of voxel positions, where each position is a list or tuple with 3 coordinates (x, y, z).
+    - sizes (list): A list of voxel sizes which scales the voxel by that amount.
+    - colors (list): A list of voxel colors, where each color is a list or tuple with 3 RGB values in the range [0, 1].
+    - base_voxel_size (float): The base size of each voxel before scaling. Default is 1.0.
+    
+    Returns:
+    - None
     """
-    control_level_low_val = f"{control_level} low"
-    control_level_high_val = f"{control_level} high"
+    
+    # Convert lists to NumPy arrays
+    positions_np = np.array(positions)
+    sizes_np = np.array(sizes)
+    colors_np = np.array(colors)
+    
+    # Create a PolyData structure from the positions
+    ugrid = pv.PolyData(positions_np)
+    
+    # Assign sizes and colors to points in the PolyData structure
+    ugrid.point_data["sizes"] = sizes_np
+    ugrid.point_data["colors"] = np.hstack((colors_np, np.ones((colors_np.shape[0], 1))))  # RGBA colors
+    
+    # Create the box glyph for each voxel and scale it
+    glyph = pv.Box().scale(base_voxel_size / 2.0, base_voxel_size / 2.0, base_voxel_size / 2.0)
+    
+    # Visualize the voxel grid
+    plotter = pv.Plotter()
+    plotter.add_mesh(ugrid.glyph(geom=glyph, scale="sizes"), rgba=True, scalars="colors")
+    plotter.enable_eye_dome_lighting()
+    plotter.show()
 
-    size_filter = df_attributes['Size'] == size
+# Sample usage with 10,000 voxels
+num_voxels = 10000
+positions = np.random.rand(num_voxels, 3) * 50  # Random positions in a space of 50x50x50
+sizes = np.random.rand(num_voxels) * 5  # Random sizes between 0 and 5
+colors = np.random.rand(num_voxels, 3)  # Random RGB colors
 
-    df_filtered = df_attributes[size_filter][['Attribute', control_level_low_val, control_level_high_val]]
-
-    return df_filtered
-
-attr_df = control_level_size_df(df_attributes, 'minimal', 'large')
-print(attr_df)
+visualize_voxel_grid_with_pyvista(positions.tolist(), sizes.tolist(), colors.tolist())
