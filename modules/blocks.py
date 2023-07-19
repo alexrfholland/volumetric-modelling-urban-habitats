@@ -3,6 +3,7 @@ import pandas as pd
 from typing import List, Dict, Tuple, Any, Optional
 from collections import Counter
 
+import os
 
 
 # read the csv files
@@ -395,7 +396,8 @@ def add_ground_cover_voxels(tree_block, ground_cover_attributes, voxel_size=0.5)
 
                 # If this is a log voxel, add additional log voxels in the y or z direction
                 if synthesized_type == 'fallen_logs':
-                    log_length = random.randint(1, 3)
+                    log_length = random.randint(3, 6)
+                    print(log_length)
                     direction = random.choice(['x', 'z'])
                     add_log_voxel(log_length, x, y, z, direction, synthesized_type)
 
@@ -430,10 +432,9 @@ def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, 
         # Most intense color from 'viridis' colormap
         'hollows': (0.280046, 0.004866, 0.329415),  # Highly intense color
     }"""
-
     colors = {
         'isNeither': (0.8, 0.8, 0.8),  # Light gray
-        'isLateralOnly': (0.4, 0.4, 0.4),  # Dark gray
+        'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
 
         # Colors from 'viridis' colormap
         'peeling_bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
@@ -445,11 +446,9 @@ def assign_color_to_dominant_attribute(dominant_attribute: str) -> Tuple[float, 
         'epiphytes': (0, 1, 1),  # Vivid cyan
 
         #ground
-        'fallen_logs' :  (1, 0.5, 0), #Vivid Orange
-        'litter_cover' : (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
+        'fallen_logs' :  (0.8, 0.4, 0), #Darker Orange
+        'litter_cover' : (0.7, 0.7, 0.7),  # Lighter gray
     }
-
-
 
 
     return colors.get(dominant_attribute, (1, 1, 1))  # Default color to white (1, 1, 1) if key not found
@@ -461,9 +460,11 @@ def convert_voxel_grid_to_point_cloud(tree_block, point_size):
         voxels=voxel_grid_3d.get_voxels()
         vox_mesh=o3d.geometry.TriangleMesh()
 
+        scaling = 0.8
+
         for v in voxels:
-            cube=o3d.geometry.TriangleMesh.create_box(width=1, height=1,
-            depth=1)
+            cube=o3d.geometry.TriangleMesh.create_box(width=1 * scaling, height=1  * scaling,
+            depth=1  * scaling)
             cube.paint_uniform_color(v.color)
             cube.translate(v.grid_index, relative=False)
             vox_mesh+=cube
@@ -527,8 +528,8 @@ point_size = 1
 voxel_size = .25
 
 print(pivot_df)
-#processedBlocks = tree_blocks
-processedBlocks = [pivot_df.loc['large', 'minimal'], pivot_df.loc['large', 'maximum']]
+processedBlocks = tree_blocks
+#processedBlocks = [pivot_df.loc['large', 'minimal'], pivot_df.loc['large', 'maximum']]
 
 def finalise_colors(tree_block):
     def voxel_grid_to_point_cloud(voxel_grid: Dict[str, Dict[str, Any]]):
@@ -572,9 +573,85 @@ def open3d_mesh_to_pyvista_polydata_with_vertex_colors(mesh):
 
     return pv_mesh
 
+def capture_views(pv_mesh, name, views=(0, 90, 180, 270), screenshot_res=(1500,1500), camera_dist=3):
+    
+    # Center of the mesh
+    center = pv_mesh.center
+
+    # Create a PyVista plotter
+    plotter = pv.Plotter(off_screen=True, window_size=screenshot_res)
+
+    # Add the mesh to the plotter
+    plotter.add_mesh(pv_mesh, scalars="Colors", lighting=True, rgb=True)
+
+    # Set up lighting
+    light = pv.Light(light_type='cameralight', intensity=2)
+    light.specular = 0.5  # Reduced specular reflection
+    plotter.add_light(light)
+    plotter.enable_eye_dome_lighting()
+
+    # Capture screenshots from different views
+    for view in views:
+        # Set the view
+        plotter.view_vector((-np.sin(np.deg2rad(view)), -np.cos(np.deg2rad(view)), 0.3), viewup=(0, 0, 1)) # adjust the third component of the view vector to change the tilt
+
+        # Zoom to maintain a constant distance
+        plotter.camera.zoom(camera_dist)
+        # Capture screenshot
+        plotter.screenshot(f'{name}_{view}_degree.png')
+
+    plotter.close()
 
 
 
+
+
+def capture_views2(pv_mesh, name, views=(0, 90, 180, 270), screenshot_res=(1500,1500), camera_dist=3):
+    def rotate_position(position, azimuth, center=(0,0,0)):
+        # Convert azimuth to radians
+        azimuth_rad = np.deg2rad(azimuth)
+        
+        # Calculate distances from center
+        dx = position[0] - center[0]
+        dy = position[1] - center[1]
+        
+        # Calculate rotated position
+        xp = dx*np.cos(azimuth_rad) - dy*np.sin(azimuth_rad) + center[0]
+        yp = dx*np.sin(azimuth_rad) + dy*np.cos(azimuth_rad) + center[1]
+        
+        return (xp, yp, position[2])  # Keep the same z value# Define the views (angles) for rotation# Create a PyVista plotter
+    
+    plotter = pv.Plotter(off_screen=True, window_size=screenshot_res)
+
+    # Add the mesh to the plotter
+    plotter.add_mesh(pv_mesh, scalars="Colors", lighting=True, rgb=True)
+
+    # Set up lighting
+    light = pv.Light(light_type='cameralight', intensity=2)
+    plotter.add_light(light)
+    plotter.enable_eye_dome_lighting()
+
+    # Set camera position to have a 45 degree azimuthal angle
+    camera_pos = (1,1,.5)
+    focal_point = (0,0,0)
+    view_up = (0,0,1)
+    plotter.camera_position = [camera_pos, focal_point, view_up]
+
+    plotter.camera.parallel_projection = True
+    plotter.camera.position = [x * 3 for x in plotter.camera.position]
+    plotter.camera.clipping_range = (0.1, 1000)  # Adjust as necessary for your scene
+
+    # Capture screenshots from different views
+    for view in views:
+        # Rotate camera position
+        new_camera_pos = rotate_position(camera_pos, view)
+        plotter.camera_position = [new_camera_pos, focal_point, view_up]
+
+        # After setting the camera position
+        plotter.reset_camera()
+
+        # Capture screenshot
+        plotter.screenshot(f'{name}_{view}_degree.png')
 
 
 
@@ -619,8 +696,9 @@ for tree_block in processedBlocks:
 
     print("converted the tree block into a pyvista mesh")
 
+    capture_views(pv_mesh, f'{tree_block.control_level}_{tree_block.size}')
 
-    # Create PyVista plotter
+    """ # Create PyVista plotter
     plotter = pv.Plotter()
     plotter.window_size = (1500, 1500)
 
@@ -630,14 +708,6 @@ for tree_block in processedBlocks:
     print(pv_mesh)
 
     light = pv.Light(light_type='scenelight', intensity=1)
-    #plotter.add_light(light)
-
-    """    # Create a light and modify its properties
-    light = pv.Light(intensity=1.0)  # increase intensity
-    light.ambient = 10  # increase ambient light
-    light.diffuse = 10  # increase diffuse light
-    light.specular = 0  # increase specular light"""
-    # Add the light to the plotter
     #plotter.add_light(light)
 
     # Add a camera light
@@ -660,11 +730,6 @@ for tree_block in processedBlocks:
     # Set near clipping distance
 
     plotter.show(auto_close=False)  # Prevent plotter from closing after show
-    img = plotter.screenshot('your_file_name.png')  # Save screenshot to file
-
-    plotter.close()
-
-
 
 
     # Set parallel projection
@@ -674,10 +739,36 @@ for tree_block in processedBlocks:
 
     plotter.reset_camera()
 
+    name = f'{tree_block.control_level}_{tree_block.size}'
+
+    def capture_views(plotter, file_name):
+        # Define four camera positions
+        camera_positions = [
+            ((100, 100, 100), (0, 0, 0), (1,1,.5)),
+            ((-100, 100, 100), (0, 0, 0), (1,1,.5)),
+            ((-100, -100, 100), (0, 0, 0), (1,1,.5)),
+            ((100, -100, 100), (0, 0, 0), (1,1,.5))
+        ]
+        
+        for i, camera_position in enumerate(camera_positions):
+            # Set the camera position
+            plotter.camera_position = camera_position
+
+            # Set screenshot file name
+            screenshot_name = f"{file_name}_{i}.png"
+            
+            # Capture screenshot
+            plotter.screenshot(screenshot_name)
 
 
-    # Show the plotter
-    plotter.show()
+    capture_views(plotter, name)
+    # Close the plotter
+    plotter.close()"""
+
+# Usage:
+# capture_views(plotter, mesh, 'your_file_name', resolution=(800, 600))
+
+
 
 
     print("shown the tree block")
@@ -702,7 +793,7 @@ def print_voxel_stats(tree_blocks):
 
 
 # Now you can call this function after creating and processing all tree_blocks:
-print_voxel_stats(tree_blocks)
+#print_voxel_stats(tree_blocks)
 
 print("done")
 
@@ -711,7 +802,7 @@ Step 1: Read the CSV Files
 
 In this step, we're reading CSV files that contain important data regarding tree mapping, branch predictions, and attributes into pandas DataFrames. This raw data will be used in the upcoming steps for data processing and visualization.
 
-Step 2: Define the Block and TreeBlock Classes
+Step 2: Define the Block and TreeBlock 
 
 The Block and TreeBlock classes represent the primary structures for processing and visualizing tree data. The Block class includes essential properties such as a point cloud, name, and various conditions, while the TreeBlock class extends the Block class, adding specific attributes for tree blocks like control level, tree ID value, size, and more.
 

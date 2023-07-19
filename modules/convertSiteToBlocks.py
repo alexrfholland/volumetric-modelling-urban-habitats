@@ -107,7 +107,7 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
         "element_type == 0",
         "element_type == 1 and horizontality == 0",
         "element_type == 1 and horizontality == 1",
-        "element_type == 1 and horizontality == 2",
+        "element_type ==x 1 and horizontality == 2",
         "element_type == 2",
         "element_type == 3",
         "element_type == 4"

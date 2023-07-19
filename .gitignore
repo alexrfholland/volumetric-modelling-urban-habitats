@@ -101,3 +101,4 @@ celerybeat.pid
 myvenv/
 data/
 colormaps/
+images/

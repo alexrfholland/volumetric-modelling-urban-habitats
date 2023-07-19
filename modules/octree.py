@@ -115,96 +115,55 @@ import pandas as pd
 import random
 
 try:
-    from .boxlineset import BoundingBoxToLineSet  # Attempt a relative import
+    from . import glyphmapping  # Attempt a relative import
 except ImportError:
-    from boxlineset import BoundingBoxToLineSet  # Fall back to an absolute import
+    import glyphmapping  # Fall back to an absolute import
 
+print("start")
+
+
+import pyvista as pv
 
 class OctreeNode:
-    def __init__(self, min_corner, max_corner, points, attributes, block_ids, depth=0):  # Added block_ids parameter
-        self.children = []  # child nodes
-        self.depth = depth  # depth of this node in the tree
-        self.min_corner = np.array(min_corner)  # minimum corner of bounding box
-        self.max_corner = np.array(max_corner)  # maximum corner of bounding box
+    def __init__(self, min_corner, max_corner, points, attributes, block_ids, depth=0):
+        self.children = []
+        self.depth = depth
+        self.min_corner = np.array(min_corner)
+        self.max_corner = np.array(max_corner)
         self.points = points
         self.attributes = attributes
-        self.block_ids = block_ids  # New line
-        self.dominant_attribute, self.dominant_color = self.calculate_dominant_attribute_and_color()
-        self.get_geos() #ensure bounding box and center are computed
+        self.block_ids = block_ids
+        self.dominant_attribute, self.dominant_color, self.originalColor = self.calculate_dominant_attribute_and_color()
+        self.center, self.extent = self.get_geos()
+        self.parent = None
 
-        # Print statements for checking
-        """print(f"Node at depth {self.depth} with min_corner: {self.min_corner}, max_corner: {self.max_corner}")
-        print(f"Points: {self.points}")
-        print(f"Attributes: {self.attributes}")
-        print(f"Block IDs: {self.block_ids}")"""
-
-
-
-    def calculate_dominant_attribute_and_color(self):
-        # Logic to determine color based on node's attributes
-        return ('isDeadOnly', [1, 0, 0])
-        """"        counts = {"isDeadOnly": 0, "isLateralOnly": 0, "isBoth": 0, "isNeither": 0}
-                for attributes in self.attributes:
-                    for key in counts:
-                        if attributes[key]:
-                            counts[key] += 1
-                            break
-                max_count_attr = max(counts, key=counts.get)
-                color = CustomOctree.get_color_based_on_attribute(max_count_attr)
-                return max_count_attr, color """
+    def calculate_dominant_attribute_and_colors(self):
+        return ('isDeadOnly', [1, 0, 0], [1,0,0])
 
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
         extent = self.max_corner - self.min_corner
-        R = np.eye(3)
-        color = self.dominant_color
-        self.bounding_box = o3d.geometry.OrientedBoundingBox(center, R, extent)
-        self.bounding_box.color = color
-        self.center = center
-
-    # The split method is responsible for dividing the current OctreeNode into 8 smaller
-    # children nodes, effectively dividing the 3D space that the node represents into
-    # 8 smaller cubes. This process is recursive.
+        return center, extent
 
     def split(self, max_depth):
-        # If the current depth of the node is less than the maximum allowed depth, we can continue to split.
         if self.depth < max_depth:
-            # Calculate the midpoint of the current node's bounding box.
             mid = (self.min_corner + self.max_corner) / 2
-            # Store the minimum corner, midpoint, and maximum corner.
             bounds = [self.min_corner, mid, self.max_corner]
-
-            # Iterate through the 8 potential children (2 for each dimension).
             for i in range(2):
                 for j in range(2):
                     for k in range(2):
-                        # Determine the minimum and maximum corners for the new child node.
                         new_min = [bounds[x][l] for x, l in zip([i, j, k], range(3))]
                         new_max = [bounds[x][l] for x, l in zip([i+1, j+1, k+1], range(3))]
-                        
-                        # The following code filters the points that are within the new bounds.
-                        # new_min <= self.points checks if each point is greater than or equal to the new minimum corner (elementwise).
-                        # self.points <= new_max checks if each point is less than or equal to the new maximum corner (elementwise).
-                        # in_range will be a boolean array that will be True for points within new bounds.
                         in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
-                        
-                        # Select the points that are within the new bounds.
                         new_points = self.points[in_range]
-                        # Select the attributes corresponding to the points within the new bounds.
                         new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
-                        # Select the block_ids corresponding to the points within the new bounds.
                         new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
-
-                        # If there are points in the new child node, create the child node.
                         if len(new_points) > 0:
-                            # Create the new child node.
                             child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)
-                            # Recursively call split on the new child.
                             child.split(max_depth)
-                            # Append the child to the current node's children list.
                             self.children.append(child)
-
-
+                            child.parent = self
+    
 class CustomOctree:
     def __init__(self, points, attributes, block_ids, max_depth):  # Added block_ids parameter
         # Compute min and max corners for the bounding box
@@ -212,9 +171,16 @@ class CustomOctree:
         #max_corner = np.max(points, axis=0)
 
         min_corner, max_corner = self.fit_cube_bbox(points)
+        self.max_depth = max_depth
 
         self.root = OctreeNode(min_corner, max_corner, points, attributes, block_ids)  # Added block_ids argument
         self.root.split(max_depth)
+
+        self.base_size = np.max(self.root.max_corner - self.root.min_corner)
+
+
+    def compute_node_size(self, depth):
+        return self.base_size / (2**depth)
 
     def fit_cube_bbox(self, points):
         min_corner = np.min(points, axis=0)
@@ -235,90 +201,112 @@ class CustomOctree:
                          "isNeither": [1, 1, 1]}
         return color_mapping[attribute]
 
-    def get_all_bounding_boxes(self, node, boxes, min_offset_level, max_offset_level):
-        if node is None:
-            return
-        # Check if the current depth is within the specified range
-        if min_offset_level <= node.depth <= max_offset_level:
-            boxes.append(node.bounding_box)
+    def get_nodes_for_visualization(self, min_offset_level, max_offset_level):
+        single_block_nodes = []
+        leaf_nodes = []
 
-        # Recurse for children
-        for child in node.children:
-            self.get_all_bounding_boxes(child, boxes, min_offset_level, max_offset_level)
+        # Helper method to check if parent is a single block node
+        def is_parent_single_block(node):
+            parent = node.parent
+            while parent is not None:
+                if len(set(parent.block_ids)) == 1:
+                    return True
+                parent = parent.parent
+            return False
 
-
-    def get_voxels_from_leaf_nodes(self, node, voxel_points, voxel_colors, max_depth):
-        if node is None:
-            return
-        # If at max depth, add voxel point
-        if node.depth == max_depth:
-            color = node.dominant_color
-            center = node.center
-            voxel_points.append(center)
-            voxel_colors.append(color)
-
-        # Recurse for children
-        for child in node.children:
-            self.get_voxels_from_leaf_nodes(child, voxel_points, voxel_colors, max_depth)
-
-    def getMeshesfromVoxels(self, max_depth, min_offset_level, max_offset_level):
-        voxel_points = []  
-        voxel_colors = []  
-        bounding_boxes = []
-
-        # Gather all the points and colors from the octree
-        self.get_voxels_from_leaf_nodes(self.root, voxel_points, voxel_colors, max_depth)
-        
-        # Gather all the bounding boxes from the octree within the specified depth range
-        self.get_all_bounding_boxes(self.root, bounding_boxes, min_offset_level, max_offset_level)
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(np.array(voxel_points))
-        pcd.colors = o3d.utility.Vector3dVector(np.array(voxel_colors))
-
-        voxel_size = np.min(self.root.max_corner - self.root.min_corner) / (2 ** max_depth)
-        voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size)
-
-        return voxel_grid, bounding_boxes, voxel_size
-    
-    #def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes):
-        # Base case: if node is None, return
-        if node is None:
-            return
-        
-        # If it's a non-leaf node
-        if node.children:
-            # If it has only one unique block ID
-            if len(set(node.block_ids)) == 1:
-                single_block_nodes.append(node)
-            # If it has multiple block IDs
-            elif len(set(node.block_ids)) > 1:
-                multiple_block_nodes.append(node)
-            
-        # Recurse for children
-        for child in node.children:
-            self.sort_nodes_by_ownership(child, single_block_nodes, multiple_block_nodes)
-
-    def sort_nodes_by_ownership(self, node, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level):
-        # Base case: if node is None, return
-        if node is None:
-            return
-        
-        # Check if the current depth is within the specified range
-        if min_offset_level <= node.depth <= max_offset_level:
-            # If it's a non-leaf node
-            if node.children:
-                # If it has only one unique block ID
-                if len(set(node.block_ids)) == 1:
+        # Base function to traverse and classify nodes
+        def traverse(node):
+            if node is None:
+                return
+            if node.depth == self.max_depth:  # Leaf node
+                leaf_nodes.append(node)
+            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
+                if len(set(node.block_ids)) == 1 and not is_parent_single_block(node):  # Single block nodes
                     single_block_nodes.append(node)
-                # If it has multiple block IDs
-                elif len(set(node.block_ids)) > 1:
-                    multiple_block_nodes.append(node)
-        
-        # Recurse for children
-        for child in node.children:
-            self.sort_nodes_by_ownership(child, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
+            # Recurse for children
+            for child in node.children:
+                traverse(child)
 
+        # Kick off the traversal
+        traverse(self.root)
+
+        return {
+            "single_block_nodes": [(node, self.compute_node_size(node.depth)) for node in single_block_nodes],
+            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
+        }
+    
+    def get_nodes_for_visualization(self, min_offset_level, max_offset_level):
+        single_block_nodes = []
+        leaf_nodes = []
+
+        # Helper method to check if parent is a single block node
+        def is_parent_single_block(node):
+            parent = node.parent
+            while parent is not None:
+                if len(set(parent.block_ids)) == 1:
+                    return True
+                parent = parent.parent
+            return False
+
+        # Base function to traverse and classify nodes
+        def traverse(node):
+            if node is None:
+                return
+            if node.depth == self.max_depth:  # Leaf node
+                leaf_nodes.append(node)
+            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
+                if len(set(node.block_ids)) == 1 and not is_parent_single_block(node):  # Single block nodes
+                    single_block_nodes.append(node)
+            # Recurse for children
+            for child in node.children:
+                traverse(child)
+
+        # Kick off the traversal
+        traverse(self.root)
+
+        return {
+            "single_block_nodes": [(node, self.compute_node_size(node.depth)) for node in single_block_nodes],
+            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
+        }
+        
+    def get_nodes_for_visualization2(self, min_offset_level, max_offset_level):
+        single_block_nodes = []
+        multiple_block_nodes = []
+        leaf_nodes = []
+
+        # Base function to traverse and classify nodes
+        def traverse(node):
+            if node is None:
+                return
+            if node.depth == self.max_depth:  # Leaf node
+                leaf_nodes.append(node)
+            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
+                if len(set(node.block_ids)) == 1:  # Single block nodes
+                    single_block_nodes.append(node)
+                elif len(set(node.block_ids)) > 1:  # Multiple block nodes
+                    multiple_block_nodes.append(node)
+            # Recurse for children
+            for child in node.children:
+                traverse(child)
+
+        # Kick off the traversal
+        traverse(self.root)
+
+        """
+        The function returns a dictionary with three keys: "single_block_nodes", "multiple_block_nodes", and "leaf_nodes".
+            For each key, a list comprehension is used to process the nodes in the respective node lists (single_block_nodes, multiple_block_nodes, leaf_nodes).
+                Each entry in the lists for the dictionary's values is a tuple, which consists of:
+                    The node object itself.
+                    The size of that node, which is computed using the self.compute_node_size(node.depth) method.
+                """
+        #list comprehension is essentially just a concise for loop
+        #for every node in single_block_nodes we produce a tuple containing the node and its computed size. 
+        return {
+            "single_block_nodes": [(node, self.compute_node_size(node.depth)) for node in single_block_nodes],
+            "multiple_block_nodes": [(node, self.compute_node_size(node.depth)) for node in multiple_block_nodes],
+            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
+        }
+        
 
     @staticmethod
     def get_color_based_on_block_id(block_id):
@@ -327,153 +315,57 @@ class CustomOctree:
         color_mapping = {13: [1, 0, 0],  # Red for block_id 13
                          1: [0, 1, 0]}  # Green for block_id 1
         return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
-
-
-def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
-
-    def generate_colors(unique_block_ids):
-        color_mapping = {}
-        for block_id in unique_block_ids:
-            color_mapping[block_id] = [random.random(), random.random(), random.random()]
-        return color_mapping
-
-
-    voxel_grid, bounding_boxes, voxel_size = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
     
-    view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
-    
-    vis.clear_geometries()
-    vis.add_geometry(voxel_grid)
+    def visualize_octree_nodes(self):
+        # Extract nodes from octree using the correct function
+        node_data = self.get_nodes_for_visualization(min_offset_level=0, max_offset_level=10)
+        
+        # Process single_block_nodes: outline cubes
+        """
+        What's happening here:
 
-    # Fetching nodes sorted by ownership
-    single_block_nodes = []
-    multiple_block_nodes = []
-    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
-
-    # Create a list of all unique block IDs
-    unique_block_ids = list(set(octree.root.block_ids))
-
-    # Generate a color for each unique block ID
-    color_mapping = generate_colors(unique_block_ids)
-
-    #Create line sets for bounding boxes with corresponding colors for single block nodes
-    linesets = []
-
-    
-    for node in single_block_nodes:
-        # Convert bounding box to LineSet
-        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
-        # Set colors of LineSet
-        unique_node_block_ids = list(set(node.block_ids))
-        if len(unique_node_block_ids) > 1:
-            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
-        else:
-            color = color_mapping[unique_node_block_ids[0]]
-            lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
-            linesets.append(lineset)
-    
-    # Create line sets for bounding boxes with a different color for multiple block nodes
-    for node in multiple_block_nodes:
-        # Convert bounding box to LineSet
-        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
-        # Set colors of LineSet
-        color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
-        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
-        linesets.append(lineset)
-
-    # Adding linesets to the visualizer
-    for lineset in linesets:
-        vis.add_geometry(lineset)
-
-    vis.get_view_control().set_lookat(octree.root.center)
-    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
-
-    return voxel_grid, linesets, voxel_size
+        node_data["single_block_nodes"] contains the list of (node, size) pairs for single block nodes. 
+        We're going to extract the individual nodes and their sizes from this list.
+        
+        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]:
+            Here, we're using a list comprehension to iterate over each (node, size) pair in node_data["single_block_nodes"].
+            entry[0] refers to the node in each (node, size) pair. Therefore, this line creates a list of all the nodes.
+        
+        sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]:
+            Similar to the above, but instead of the node, we're extracting the size for each node using entry[1].
+        
+        positions_single_block = np.array([node.center for node in single_block_nodes]):
+            Here, we're creating a numpy array of the centers of all the nodes in single_block_nodes.
+            The node.center is an attribute of the node which gives its center position in space.
+        
+        depths_single_block = np.array([node.depth for node in single_block_nodes]):
+            Similarly, we're creating a numpy array, but this time it's of the depths of all the nodes in single_block_nodes.
+        
+        In simpler terms: We're organizing the data in node_data["single_block_nodes"] 
+        into separate lists/arrays for easy access to the nodes' attributes (position, depth) and their computed sizes.
+        """
 
 
-def update_visualization2(vis, octree, max_depth, min_offset_level, max_offset_level):
 
-    def generate_colors(unique_block_ids):
-        color_mapping = {}
-        for block_id in unique_block_ids:
-            color_mapping[block_id] = [random.random(), random.random(), random.random()]
-        return color_mapping
-
-
-    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
-    
-    view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
-    
-    vis.clear_geometries()
-    vis.add_geometry(voxel_grid)
-
-    # Fetching nodes sorted by ownership
-    single_block_nodes = []
-    multiple_block_nodes = []
-    octree.sort_nodes_by_ownership(octree.root, single_block_nodes, multiple_block_nodes, min_offset_level, max_offset_level)
-
-    # Create a list of all unique block IDs
-    unique_block_ids = list(set(octree.root.block_ids))
-
-    # Generate a color for each unique block ID
-    color_mapping = generate_colors(unique_block_ids)
-
-    # Create line sets for bounding boxes with corresponding colors for single block nodes
-    boundingboxes = []
-
-    for node in single_block_nodes:
-        box = node.bounding_box
-        unique_node_block_ids = list(set(node.block_ids))
-        if len(unique_node_block_ids) > 1:
-            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
-        else:
-            color = color_mapping[unique_node_block_ids[0]]
-            box.color = color
-            boundingboxes.append(box)
-    
-    # Create line sets for bounding boxes with a different color for multiple block nodes
-    for node in multiple_block_nodes:
-        box = node.bounding_box
-        box.color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
-        boundingboxes.append(box)
-
-    for box in boundingboxes:
-        vis.add_geometry(box)
-    
-    """
-    # Create line sets for bounding boxes with corresponding colors for single block nodes
-    linesets = []
-
-    
-    for node in single_block_nodes:
-        # Convert bounding box to LineSet
-        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
-        # Set colors of LineSet
-        unique_node_block_ids = list(set(node.block_ids))
-        if len(unique_node_block_ids) > 1:
-            print(f"Error: More than one unique block ID found in node: {unique_node_block_ids}")
-        else:
-            color = color_mapping[unique_node_block_ids[0]]
-            lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
-            linesets.append(lineset)
-    
-    # Create line sets for bounding boxes with a different color for multiple block nodes
-    for node in multiple_block_nodes:
-        # Convert bounding box to LineSet
-        lineset = BoundingBoxToLineSet([node.bounding_box], line_width=100).to_linesets()[0]['geometry']
-        # Set colors of LineSet
-        color = [0.5, 0.5, 0.5] # Example gray color for multiple block nodes
-        lineset.colors = o3d.utility.Vector3dVector([color for _ in range(len(lineset.lines))])
-        linesets.append(lineset)
-
-    # Adding linesets to the visualizer
-    for lineset in linesets:
-        vis.add_geometry(lineset)"""
-
-    vis.get_view_control().set_lookat(octree.root.center)
-    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
-
-
+        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]
+        sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]
+        positions_single_block = np.array([node.center for node in single_block_nodes])
+        depths_single_block = np.array([node.depth for node in single_block_nodes])
+        max_depth_single_block = max(depths_single_block)
+        colors_single_block = depths_single_block / max_depth_single_block
+        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colors_single_block, solid=False, line_width=5, cmap='cool')
+        
+        # Process leaf_nodes: solid cubes
+        leaf_nodes = [entry[0] for entry in node_data["leaf_nodes"]]
+        sizes_leaf = [entry[1] for entry in node_data["leaf_nodes"]]
+        positions_leaf = np.array([node.center for node in leaf_nodes])
+        depths_leaf = np.array([node.depth for node in leaf_nodes])
+        max_depth_leaf = max(depths_leaf)
+        colors_leaf = depths_leaf / max_depth_leaf
+        glyphmapping.add_glyphs_to_visualiser(positions_leaf, sizes_leaf, colors_leaf, solid=True)
+        
+        # Show the glyphs using pyvista
+        glyphmapping.plot_glyphs()
 
 def tree_block_processing(coordinates_list):
     """
@@ -543,82 +435,10 @@ def tree_block_processing(coordinates_list):
 
 
 
-def tree_block_processing2(tree_count):
-    """
-    Load and process the tree block data.
-
-    Args:
-        tree_count (int): The number of tree blocks to process.
-
-    Returns:
-        Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
-    """
-    # Load the point cloud data
 
 
-    def load_and_translate_tree_block_data(dataframe, tree_id, translation_range=20):
-        # Filter the data for the specific tree
-        block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
-        
-        # Apply a random translation on the horizontal plane (X, Y)
-        translation_x = random.uniform(-translation_range, translation_range)
-        translation_y = random.uniform(-translation_range, translation_range)
-        block_data['x'] += translation_x
-        block_data['y'] += translation_y
-        
-        # Update block IDs to the format "Tree-[unique number]"
-        global tree_block_count
-        if tree_id in tree_block_count:
-            tree_block_count[tree_id] += 1
-        else:
-            tree_block_count[tree_id] = 1
-
-        block_data['BlockID'] = f'Tree-{tree_id}-{tree_block_count[tree_id]}'
-        
-        return block_data
-
-    def get_tree_ids(tree_count):
-        return random.sample(range(1, 17), tree_count)
-    
-    def define_attributes(combined_data):
-        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-        return attributes
-    
-
-
-    csv_file = 'data/branchPredictions - full.csv'
-
-
-    data = pd.read_csv(csv_file)
-    print(f"Loaded data with shape {data.shape}")
-    print(data.head())
-
-    # Get random tree IDs
-    tree_ids = get_tree_ids(tree_count)
-    print(f'Loading and processing {tree_ids} tree blocks...')
-
-    # Process block data for each tree
-    processed_data = [load_and_translate_tree_block_data(data, i) for i in tree_ids]
-
-    # Combine the block data
-    combined_data = pd.concat(processed_data)
-
-    print(combined_data)
-
-    # Rename columns
-    combined_data = combined_data.rename(columns={'y': 'z', 'z': 'y'})
-
-    # Extract points, attributes, and block IDs
-    points = combined_data[['x', 'y', 'z']].to_numpy()
-    attributes = define_attributes(combined_data)
-    block_ids = combined_data['Tree.ID'].tolist()
-
-    return points, attributes, block_ids
-
-
-
+# Modify main function
 def main():
-
     # Process tree block data for a specified number of trees
     # Example usage:
     coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
@@ -633,20 +453,12 @@ def main():
 
 
     # Create Octree
-    max_depth = 7
+    max_depth = 8    
     octree = CustomOctree(points, attributes, block_ids, max_depth)
     print(f"Created Octree with max depth {max_depth}")
 
-    # Visualization
-    vis = o3d.visualization.Visualizer()
-    vis.create_window()
-
-    # Update visualization
-    update_visualization(vis, octree, max_depth, 2, 3)
-
-    # Run visualization
-    vis.run()
-    vis.destroy_window()
+    octree.visualize_octree_nodes()
 
 if __name__ == "__main__":
     main()
+
