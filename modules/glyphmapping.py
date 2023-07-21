@@ -4,13 +4,57 @@ import pyvista as pv
 
 glyphs_to_plot = []
 
+# 'glyphs_to_plot' is a list that contains dictionaries. Each dictionary represents a set of glyphs that 
+# will be added to the visualiser. The dictionary has the following structure:
+
+# 'glyphs': a pv.PolyData or pv.UnstructuredGrid object that contains the glyph geometry and associated data. 
+# This is created using the 'glyph' method of a pv.PolyData or pv.UnstructuredGrid object. The 'glyph' method 
+# generates glyphs at the points specified in the 'points' parameter. The glyphs can be scaled and/or colored 
+# according to scalar data associated with the points.
+
+# 'solid': a boolean value that indicates whether the glyphs should be solid or not. If 'True', the glyphs 
+# are solid. If 'False', only the outline of the glyphs is shown.
+
+# 'line_width': a float value that specifies the line width for the glyphs when 'solid' is 'False'.
+
+# 'cmap': a string that specifies the colormap to use for coloring the glyphs. This is used when the glyphs 
+# are colored according to a scalar value. If 'rgb' is specified, the glyphs are colored according to RGB values.
+
+# The structure of 'glyphs_to_plot' depends on which function is used to add the glyphs:
+
+# 1) In 'add_glyphs_to_visualiser()', the 'glyphs' are created by scaling a cube geometry according to the 
+# 'sizes' parameter and coloring the glyphs according to the 'color_scalar' parameter.
+
+# 2) In 'add_voxels_with_rgba_to_visualiser()', the 'glyphs' are created by scaling a box geometry according 
+# to the 'sizes' parameter and coloring the glyphs according to the 'colors' parameter.
+
+# 3) In 'add_point_cloud_to_visualiser()', the 'glyphs' are points and are colored according to the 'colors' parameter.
+
+
+# In the 'plot()' function, the glyphs are added to the plotter based on the settings in 'glyphs_to_plot':
+
+# 1) If 'cmap' is 'rgb', then the glyphs are colored according to RGB values. The 'scalars' parameter of 
+# 'add_mesh()' is set to "colors", which tells 'add_mesh()' to color the glyphs based on the RGB values in 
+# the 'colors' array. If 'solid' is 'True', the glyphs are solid. If 'solid' is 'False', the glyphs are 
+# wireframe and the line width is set according to 'line_width'.
+
+# 2) If 'cmap' is not 'rgb' and 'sizes' is in the point data of the glyphs, then the glyphs are colored according
+# to a scalar value. The 'scalars' parameter of 'add_mesh()' is set to "color_scalar", which tells 'add_mesh()' 
+# to color the glyphs based on the scalar values in the 'color_scalar' array. The colormap is set according to 'cmap'. 
+# If 'solid' is 'True', the glyphs are solid. If 'solid' is 'False', the glyphs are wireframe and the line width 
+# is set according to 'line_width'.
+
+# 3) If 'cmap' is not 'rgb' and 'sizes' is not in the point data of the glyphs, then the glyphs are added without 
+# any scalar coloring.
+
+
 def add_glyphs_to_visualiser(positions, sizes, color_scalar, solid=True, line_width=1.0, cmap='rainbow'):
     cube = pv.Cube() if solid else pv.Cube().outline()
     points = pv.PolyData(positions)
     points["sizes"] = sizes
     points["color_scalar"] = color_scalar
     glyphs = points.glyph(scale="sizes", factor=1.0, geom=cube)
-    
+
     settings = {
         'glyphs': glyphs,
         'solid': solid,
@@ -18,8 +62,6 @@ def add_glyphs_to_visualiser(positions, sizes, color_scalar, solid=True, line_wi
         'cmap': cmap
     }
     glyphs_to_plot.append(settings)
-    print(glyphs_to_plot)
-
 
 def add_voxels_with_rgba_to_visualiser(positions, sizes, colors, base_voxel_size=1.0):
     positions_np = np.array(positions)
@@ -61,20 +103,32 @@ def plot():
     p.add_light(light2)
 
     for setting in glyphs_to_plot:
-        
-        print(setting['glyphs'].point_data)
-        
+
+        # If colormap is set to 'rgb', glyphs are colored according to RGB values
         if setting['cmap'] == 'rgb':
+
+            # If 'solid' is True, glyphs are solid and fully opaque 
             if setting['solid']:
                 p.add_mesh(setting['glyphs'], scalars="colors", rgb=True, opacity=1.0)
+
+            # If 'solid' is False, glyphs are wireframe with specified line width 
             else:
                 p.add_mesh(setting['glyphs'], scalars="colors", rgb=True, opacity=1.0, style='wireframe', line_width=setting['line_width'])
-        
+
+        # If colormap is not set to 'rgb' and 'sizes' are included in the glyph's point data, glyphs are colored 
+        # according to a scalar value
         elif 'sizes' in setting['glyphs'].point_data:
+
+            # If 'solid' is True, glyphs are solid and semi-transparent
             if setting['solid']:
-                p.add_mesh(setting['glyphs'], scalars="sizes", cmap=setting['cmap'], opacity=1.0)
+                p.add_mesh(setting['glyphs'], scalars="color_scalar", cmap=setting['cmap'], opacity=.07)
+
+            # If 'solid' is False, glyphs are wireframe with specified line width 
             else:
-                p.add_mesh(setting['glyphs'], scalars="sizes", cmap=setting['cmap'], opacity=1.0, style='wireframe', line_width=setting['line_width'])
+                p.add_mesh(setting['glyphs'], scalars="color_scalar", cmap=setting['cmap'], opacity=1.0, style='wireframe', line_width=setting['line_width'])
+
+        # If colormap is not set to 'rgb' and 'sizes' are not included in the glyph's point data, glyphs are added 
+        # without any scalar coloring
         else:
             p.add_mesh(setting['glyphs'], opacity=1.0)
 
