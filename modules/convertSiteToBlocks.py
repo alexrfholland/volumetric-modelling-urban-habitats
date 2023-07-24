@@ -23,17 +23,19 @@ Each point has the following attributes: X, Y, Z (positions), Rf, Gf, Bf (colors
 
 Key Steps and Elements of the Code:
 
-Step 1: Data Import - Use Open3D to import the PLY file.
+INITIAL PROCESSING (COMPLETE)
+Step 1.1: Data Import - Use Open3D to import the PLY file.
 
-Step 2: further_processing - Use the Dip_(degrees) information to classify points based on the horizontality: 'flat', 'angled', or 'vertical'.
+Step 1.2: further_processing - Use the Dip_(degrees) information to classify points based on the horizontality: 'flat', 'angled', or 'vertical'.
 
-Step 3: Build Query Structure - Create a function to categorize points based on combinations of attributes, for example, "element_type == 1 and horizontality == 1". This function will assign a new attribute called 'category' to each point, based on the combination of attributes specified in the query.
+Step 1.3: Build Query Structure - Create a function to categorize points based on combinations of attributes, for example, "element_type == 1 and horizontality == 1". This function will assign a new attribute called 'category' to each point, based on the combination of attributes specified in the query.
 
-Step 4: Color Enhancement - Define a function that takes the original colors and enhances them using the Illuminance_(PCV) information.
+Step 1.4: Color Enhancement - Define a function that takes the original colors and enhances them using the Illuminance_(PCV) information.
 
-Step 5: Visualization - Visualize the point cloud using Open3D, incorporating color enhancement and displaying different colors based on the 'category' attribute assigned in Step 3.
 
 """
+
+
 
 import open3d as o3d
 import pandas as pd
@@ -105,13 +107,15 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
     # Queries
     queries = [
         "element_type == 0", #block id = 1, trees
-        "element_type == 1 and horizontality == 0", #block id = 2, buildings, roof
-        "element_type == 1 and horizontality == 1", #block id = 3 buildings, flat
+        "element_type == 1 and horizontality == 0", #block id = 2, buildings, roof flat
+        "element_type == 1 and horizontality == 1", #block id = 3 buildings, roof angle
         "element_type == 1 and horizontality == 2", #block id = 4, buildings, wall (vertical)
         "element_type == 2", #block id = 5, grass
         "element_type == 3", #block id = 6, street furniture
         "element_type == 4" #block id = 7, impermeable ground
     ]
+
+
     
     # Create category mapping
     data['blockID'] = create_category_mapping(data, queries)
