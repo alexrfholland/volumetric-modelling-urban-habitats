@@ -104,13 +104,13 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
     
     # Queries
     queries = [
-        "element_type == 0",
-        "element_type == 1 and horizontality == 0",
-        "element_type == 1 and horizontality == 1",
-        "element_type == 1 and horizontality == 2",
-        "element_type == 2",
-        "element_type == 3",
-        "element_type == 4"
+        "element_type == 0", #block id = 1, trees
+        "element_type == 1 and horizontality == 0", #block id = 2, buildings, roof
+        "element_type == 1 and horizontality == 1", #block id = 3 buildings, flat
+        "element_type == 1 and horizontality == 2", #block id = 4, buildings, wall (vertical)
+        "element_type == 2", #block id = 5, grass
+        "element_type == 3", #block id = 6, street furniture
+        "element_type == 4" #block id = 7, impermeable ground
     ]
     
     # Create category mapping

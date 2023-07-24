@@ -18,7 +18,7 @@ The main steps involved are:
 3. Define a data structure for storing information about each Block.
 4. Implement methods to associate nodes with the appropriate Blocks during insertion into the Octree.
 5. Query nodes and Blocks based on specific criteria such as depth levels and Block identifiers.
-6. Visualize the Octree and Blocks.
+6. Visualize the Octree and Blocks using PyVista.
 
 
 
@@ -32,7 +32,6 @@ Key Steps:
     - define a Block grouping for each urban element we load data for
 
 2. Construct a Custom Octree:
-    - initialise a dictionary that has a block id and block-level attributes associated with each block
     - Initialize a root node of the octree with the minimum and maximum corners of the point cloud.
     - Recursively split the root node into eight children based on the midpoint of the parent's bounding box.
     - For each node, associate block ids with it (ie. the block id that points below to. note:  Nodes can be associated with one or multiple blocks)
@@ -45,17 +44,14 @@ Key Steps:
     - Create a point cloud from the center points of these leaf nodes and assign colors based on their dominant attributes.
     - Convert the point cloud into a voxel grid using Open3D's VoxelGrid class.
 
-4. Generate Bounding Boxes for Octree Nodes:
+4. Generate Outline Cubesfor Other Nodes:
     - Traverse the octree, and collect nodes in levels within the minimum and maximum offset values. For each node within this offset, create a bounding box.
-    - Assign a color to each bounding box based on the node's dominant attribute.
-    - Save these bounding boxes for later visualization.
-
+    - Find nodes that only belong to one block
+    - Assign a color to eaach single block node based on the node's blockID
+    
 5. Visualize the Voxel Grid and Bounding Boxes:
-    - Create a visualizer object using Open3D.
-    - Add the voxel grid and bounding boxes to the visualizer.
-    -Convert these bounding boxes into mesh lines, enabling customization of the width.
-    - convert the voxel grid into meshes and compute mesh normals
-    - Run the visualizer and enable interactions with keyboard callbacks.
+    - Create a visualizer module called Glyphmapping that can be used to visalise nodes as a pointcloud, filled cubes, outline cubes, coloured either with RGBA or a scalar colour cmap
+    - Add the voxel grid and bounding boxes to the visualizer using pyvista glyphs and other high-performance rendering techniques in PyVyista
 
 Implementation Details for Proposed Block-Based Structure:
 
@@ -105,9 +101,13 @@ STEP 4 and 5: implement a query function and visualise bounding boxes
 
 
 '''
-# Global dictionary to keep track of tree block counts
-tree_block_count = {}
 
+"""CURRENT EXTENTION TO DO:
+1.1 Extend octree class so we can add additional blocks and update the blocks (ie. recalculate the dominant attribute, single block nodes, etc)
+1.1.1 write a simple test function that can add a block and update the octree
+1.2 Extend octree class so we can find nearest node of a particular type
+1.2.1 write a simple test function that can give a a type of node (ie. has block id = X) of then search for the nearest neighbouring node of a different type (ie. has block ID = Y)
+"""
 
 import open3d as o3d
 import numpy as np
@@ -227,26 +227,15 @@ class CustomOctree:
                 parent = parent.parent
             return False
 
-        # Base function to traverse and classify nodes
-        def traverse2(node):
-            if node is None:
-                return
-            if node.depth == self.max_depth:  # Leaf node
-                leaf_nodes.append(node)
-            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
-                if len(set(node.block_ids)) == 1 and not is_parent_single_block(node):  # Single block nodes
-                    print(node.block_ids)
-                    single_block_nodes.append(node)
-            # Recurse for children
-            for child in node.children:
-                traverse(child)
 
         # a node will be added to single_block_nodes if it's a single block node and either 
         # it's at the min_offset_level depth, or it does not have a parent that's a single block node.
         def traverse(node):
             if node is None:
                 return
-            if node.depth == self.max_depth:  # Leaf node
+            #if node.depth == self.max_depth: # and 2 not in node.block_ids and 4:  Leaf node #and 1 not in node.block_ids #viewerviewer
+            #if node.depth == self.max_depth and 2 not in node.block_ids and 3 not in node.block_ids and 4 not in node.block_ids:
+            if node.depth == self.max_depth and 1 not in node.block_ids:
                 leaf_nodes.append(node)
             elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
                 if len(set(node.block_ids)) == 1 and (node.depth == min_offset_level or not is_parent_single_block(node)):  
@@ -304,8 +293,23 @@ class CustomOctree:
         color_scalar = [0] * len(blockId_indices)
         print(color_scalar)
 
+        ##viewerviewer
+
         glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=True, line_width=10, cmap='tab10')
-        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=False, line_width=2, cmap='tab10')
+        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=False, line_width=2, cmap='tab10')
+
+        # Specify the values to include
+        include_values = [0] # replace this with your list of values
+
+        # Create new lists including only elements where blockId_indices is in include_values
+        new_blockId_indices = [id for i, id in enumerate(blockId_indices) if id in include_values]
+        new_positions_single_block = [positions_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
+        new_sizes_single_block = [sizes_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
+
+        # Pass these new lists to the function
+        glyphmapping.add_glyphs_to_visualiser(new_positions_single_block, new_sizes_single_block, new_blockId_indices, solid=False, line_width=2, cmap='tab10')
+
+
 
         
         # Process leaf_nodes: solid cubes
@@ -334,7 +338,7 @@ def tree_block_processing(coordinates_list):
 
     Returns:
         Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
-    """
+    """ 
 
     def load_and_translate_tree_block_data(dataframe, tree_id, translation):
         # Filter the data for the specific tree
