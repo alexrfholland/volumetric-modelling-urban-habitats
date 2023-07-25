@@ -16,6 +16,7 @@ y_min, y_max = np.min(points_array[:, 1]), np.max(points_array[:, 1])
 midpoint = np.array([(x_min + x_max) / 2, (y_min + y_max) / 2, 0.0])  # Assuming z = 0.0 for translation
 
 pcd.translate(-midpoint)
+print(f'Translated point cloud by {-midpoint}')
 
 translated_points = np.asarray(pcd.points)
 translated_attributes = df.iloc[:, 3:].values  # Assuming the attributes start from the fourth column
@@ -26,7 +27,7 @@ translated_df = translated_df.astype(df.dtypes)
 print(translated_df)
 
 # Convert to Parquet and save to the desired location
-parquet_file = 'data/sites/park.parquet'  # Replace with your desired file path
-translated_df.to_parquet(parquet_file)
+#parquet_file = 'data/sites/park.parquet'  # Replace with your desired file path
+#translated_df.to_parquet(parquet_file)
 
 print("Conversion to Parquet completed!")

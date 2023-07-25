@@ -460,6 +460,8 @@ class CustomOctree:
 
         # Specify the values to include
         include_values = [0] # replace this with your list of values
+        #include_values = [11,12] # replace this with your list of values
+
 
         # Create new lists including only elements where blockId_indices is in include_values
         new_blockId_indices = [id for i, id in enumerate(blockId_indices) if id in include_values]
@@ -488,6 +490,77 @@ class CustomOctree:
         glyphmapping.plot()
 
 
+def tree_block_processing_complex(df):
+    """
+    Load and process the tree block data.
+
+    Args:
+        df (DataFrame): A DataFrame contains trees data with 'X', 'Y', 'Z' and 'Tree Size' columns.
+
+    Returns:
+        Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
+    """ 
+
+    global tree_block_count
+    tree_block_count = {'small': 10, 'medium': 11, 'large': 12}
+    
+    def load_and_translate_tree_block_data(dataframe, tree_id, translation, tree_size):
+        print(f"Processing tree id {tree_id}, size {tree_size}")
+        block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
+
+        # Apply translation
+        translation_x, translation_y, translation_z = translation
+        block_data['x'] += translation_x
+        block_data['y'] += translation_y
+        block_data['z'] += translation_z
+
+        block_data['BlockID'] = tree_block_count[tree_size]
+
+        return block_data
+
+
+    def get_tree_ids(tree_size, count):
+        tree_id_ranges = {'small': range(0, 5), 'medium': range(5, 10), 'large': range(10, 17)}
+        print(f'count is: {count}')
+        return random.choices(tree_id_ranges[tree_size], k=count)
+
+
+    def define_attributes(combined_data):
+        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        return attributes
+
+
+    csv_file = 'data/branchPredictions - full.csv'
+
+    data = pd.read_csv(csv_file)
+    print(f"Loaded data with shape {data.shape}")
+
+    # Process block data for each tree size
+    processed_data = []
+    for tree_size in ['small', 'medium', 'large']:
+        tree_size_data = df[df['Tree Size'] == tree_size]
+        tree_count = len(tree_size_data)
+        print (f'{tree_size} trees count is {tree_count}')
+        tree_ids = get_tree_ids(tree_size, tree_count)
+        print(f'Loading and processing {tree_ids} {tree_size} tree blocks...')
+
+        # Process block data for each tree
+        for tree_id, row in zip(tree_ids, tree_size_data.iterrows()):
+            processed_block_data = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size)
+            processed_data.append(processed_block_data)
+
+    # Combine the block data
+    combined_data = pd.concat(processed_data)
+
+    print(combined_data)
+
+    # Extract points, attributes, and block IDs
+    points = combined_data[['x', 'y', 'z']].to_numpy()
+    attributes = define_attributes(combined_data)
+    block_ids = combined_data['BlockID'].tolist()
+
+    return points, attributes, block_ids
+
 
 def tree_block_processing(coordinates_list):
     """
@@ -507,6 +580,8 @@ def tree_block_processing(coordinates_list):
         # Filter the data for the specific tree
         block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
 
+        print(translation)
+
         # Apply translation
         translation_x, translation_y, translation_z = translation
         block_data['x'] += translation_x
@@ -525,7 +600,9 @@ def tree_block_processing(coordinates_list):
         return block_data
 
     def get_tree_ids(count):
-        return random.sample(range(1, 17), count)
+        print(f'count is: {count}')
+        return random.choices(range(1, 17), k=count)
+
 
     def define_attributes(combined_data):
         attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
@@ -540,6 +617,7 @@ def tree_block_processing(coordinates_list):
     # Get random tree IDs
     #print(f'Coordinates list: {coordinates_list}')
     tree_count = len(coordinates_list)
+    print (f'coordinates_list is {coordinates_list}')
     tree_ids = get_tree_ids(tree_count)
     print(f'Loading and processing {tree_ids} tree blocks...')
 
@@ -610,7 +688,74 @@ def main():
     octree.visualize_octree_nodes()
 
 
+def main3():
+    # Create dummy data
+    data = pd.DataFrame({
+        'X': [20, -5, -20, 20, -5, -20, 20, -5, -20],
+        'Y': [20, -5, -20, 20, -5, -20, 20, -5, -20],
+        'Z': [20, 0, -20, 20, 0, -20, 20, 0, -20],
+        'Tree Size': ['small', 'medium', 'large', 'small', 'medium', 'large', 'small', 'medium', 'large']
+    })
+
+    points, attributes, block_ids = tree_block_processing_complex(data)
+
+    # Create the octree
+    octree = CustomOctree(points, attributes, block_ids, max_depth=8)
+    print(f"Initial Octree created with bounds of {octree.root.min_corner} - {octree.root.max_corner}")
+    print(f'octree root block_ids are: {type(octree.root.block_ids)}')
+
+    # Create new dummy data for additional blocks
+    new_data = pd.DataFrame({
+        'X': [2, 1, -5, 2, 1, -5, 2, 1, -5],
+        'Y': [2, 1, -5, 2, 1, -5, 2, 1, -5],
+        'Z': [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        'Tree Size': ['small', 'medium', 'large', 'small', 'medium', 'large', 'small', 'medium', 'large']
+    })
+
+    new_points, new_attributes, new_block_ids = tree_block_processing_complex(new_data)
+
+    print(f'first couple of rows of new_block_ids: {new_block_ids[:2]}')
+    # Add new block to the octree
+    octree.add_block(new_points, new_attributes, new_block_ids)
+    print("Octree updated with additional data")
+    print(f'now octree root block_ids are: {type(octree.root.block_ids)}')
+
+    octree.visualize_octree_nodes()
+
+def print_summary(data, name):
+    if isinstance(data, np.ndarray):
+        print(f'{name} - shape: {data.shape}, dtype: {data.dtype}, size: {data.size}')
+    elif isinstance(data, list):
+        print(f'{name} - length: {len(data)}, element type: {type(data[0])}')
+
+
+
+
+def test():
+    # Load the initial data
+    coordinates_list = [(20, 20, 20), (-5, -5, 0), (-20, -20, -20)]
+    df = pd.DataFrame({
+        'X': [coord[0] for coord in coordinates_list],
+        'Y': [coord[1] for coord in coordinates_list],
+        'Z': [coord[2] for coord in coordinates_list],
+        'Tree Size': ['small', 'medium', 'large']
+    })
+
+    # Generate points, attributes, and block IDs with both functions
+    points1, attributes1, block_ids1 = tree_block_processing(coordinates_list)
+    points2, attributes2, block_ids2 = tree_block_processing_complex(df)
+
+    # Print summaries
+    print_summary(points1, 'Points from tree_block_processing')
+    print_summary(points2, 'Points from tree_block_processing_complex')
+    print_summary(attributes1, 'Attributes from tree_block_processing')
+    print_summary(attributes2, 'Attributes from tree_block_processing_complex')
+    print_summary(block_ids1, 'Block IDs from tree_block_processing')
+    print_summary(block_ids2, 'Block IDs from tree_block_processing_complex')
+
+
 
 if __name__ == "__main__":
-    main()
+    main3()
+    #test()
 
