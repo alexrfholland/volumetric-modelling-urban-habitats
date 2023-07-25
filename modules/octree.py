@@ -238,7 +238,7 @@ class CustomOctree:
         return min_corner, max_corner
 
     
-    def add_block(self, points, attributes, block_ids):
+    def add_block2(self, points, attributes, block_ids):
         for point, attribute, block_id in zip(points, attributes, block_ids):
             # Find the appropriate node to insert this point into
             node, quadrant = self.find_node_for_point(point)
@@ -256,10 +256,39 @@ class CustomOctree:
                     node_to_update.block_ids.append(block_id)
                     node_to_update = node_to_update.parent
             else:
-                # Append the point, attribute, and block_id to the found node
+                # Append the point, attribute, and block_id to the found leaf node
                 node.points = np.append(node.points, [point], axis=0)
                 node.attributes.append(attribute)
                 node.block_ids.append(block_id)
+
+    def add_block(self, points, attributes, block_ids):
+        def update_block_ids(node, block_id):
+            while node is not None:
+                node.block_ids.append(block_id)
+                node = node.parent
+
+        for point, attribute, block_id in zip(points, attributes, block_ids):
+            # Find the appropriate node to insert this point into
+            node, quadrant = self.find_node_for_point(point)
+
+            # If the point is not within any existing child node, create a new one
+            if node is self.root or quadrant is not None:
+                min_corner, max_corner = node.calculate_bounds_for_point(point)
+                child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
+                node.children.append(child)
+                child.parent = node
+
+                # Append the block_id to the current node and all its ancestors
+                update_block_ids(node, block_id)
+            else:
+                # Append the point, attribute, and block_id to the found leaf node
+                node.points = np.append(node.points, [point], axis=0)
+                node.attributes.append(attribute)
+                node.block_ids.append(block_id)
+                
+                # Append the block_id to the found node and all its ancestors
+                update_block_ids(node, block_id)
+
 
 
 
