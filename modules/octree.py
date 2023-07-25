@@ -108,8 +108,10 @@ STEP 4 and 5: implement a query function and visualise bounding boxes
 1.2 Extend octree class so we can find nearest node of a particular type
 1.2.1 write a simple test function that can give a a type of node (ie. has block id = X) of then search for the nearest neighbouring node of a different type (ie. has block ID = Y)
 """
+import logging
 
-import open3d as o3d
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+
 import numpy as np
 import pandas as pd
 import random
@@ -152,7 +154,7 @@ class OctreeNode:
             return 'isColorDominant', dominant_color, dominant_color
         else:
             return 'isDeadOnly', [1, 0, 0], [1,0,0]
-
+    
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
         extent = self.max_corner - self.min_corner
@@ -176,12 +178,42 @@ class OctreeNode:
                             child.split(max_depth)
                             self.children.append(child)
                             child.parent = self
+
+
+    def calculate_bounds_for_point(self, point):
+        # Calculate the midpoint of the current node
+        mid = (self.min_corner + self.max_corner) / 2
+
+        # The new minimum corner is the minimum of the current node's corners and the point
+        new_min = np.minimum(self.min_corner, point)
+
+        # The new maximum corner is the maximum of the current node's corners and the point
+        new_max = np.maximum(self.max_corner, point)
+
+        # Adjust the new minimum and maximum corners so that the point is within the middle of the new bounds
+        new_min = np.where(point <= mid, new_min, mid)
+        new_max = np.where(point > mid, new_max, mid)
+
+        return new_min, new_max
+
+
+                        
+
     
+
+
+
+    
+#a block is a collection of points (and their attributes) which might spread over multiple nodes in the octree
+
 class CustomOctree:
     def __init__(self, points, attributes, block_ids, max_depth):  # Added block_ids parameter
         # Compute min and max corners for the bounding box
         #min_corner = np.min(points, axis=0)
         #max_corner = np.max(points, axis=0)
+
+        print(f'summary stats of points, attributes and block_ids: {np.shape(points)}, {np.shape(attributes)}, {np.shape(block_ids)}')
+        print(f'input data for these looks like: {points[0]}, {attributes[0]}, {block_ids[0]}')
 
         min_corner, max_corner = self.fit_cube_bbox(points)
         self.max_depth = max_depth
@@ -205,6 +237,102 @@ class CustomOctree:
 
         return min_corner, max_corner
 
+    
+    def add_block(self, points, attributes, block_ids):
+        for point, attribute, block_id in zip(points, attributes, block_ids):
+            # Find the appropriate node to insert this point into
+            node, quadrant = self.find_node_for_point(point)
+
+            # If the point is not within any existing child node, create a new one
+            if node is self.root or quadrant is not None:
+                min_corner, max_corner = node.calculate_bounds_for_point(point)
+                child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
+                node.children.append(child)
+                child.parent = node
+
+                # Append the block_id to the current node and all its ancestors
+                node_to_update = node
+                while node_to_update is not None:
+                    node_to_update.block_ids.append(block_id)
+                    node_to_update = node_to_update.parent
+            else:
+                # Append the point, attribute, and block_id to the found node
+                node.points = np.append(node.points, [point], axis=0)
+                node.attributes.append(attribute)
+                node.block_ids.append(block_id)
+
+
+
+
+        
+    def find_node_for_point(self, point):
+        epsilon = 1e-9  # A small tolerance value
+
+        # Start from the root and go down the tree
+        node = self.root
+        quadrant = None
+        while len(node.children) > 0:
+            for i, child in enumerate(node.children):
+                min_corner = child.min_corner - epsilon
+                max_corner = child.max_corner + epsilon
+                
+                if np.all(min_corner <= point) and np.all(point <= max_corner):
+                    node = child
+                    break
+            else:
+                # The point does not fit into any child -- this should not happen if the point fits into the octree bounds
+                # However, in sparse octrees, it's possible that the child node was not created yet
+                break  # This will stop the loop and return the current node
+            quadrant = i
+
+        return node, quadrant
+
+
+        return node
+
+    def find_node_for_point2(self, point):
+        # Start from the root and go down the tree
+        node = self.root
+        while len(node.children) > 0:
+            logging.debug(f"Checking point {point} against children of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+            for child in node.children:
+                logging.debug(f"Checking point {point} against child at depth {child.depth} with bounds {child.min_corner} - {child.max_corner}")
+                if np.all(child.min_corner <= point) and np.all(point <= child.max_corner):
+                    node = child
+                    break
+            else:
+                # Point does not fit into any child -- this should not happen if the point fits into the octree bounds
+                logging.debug(f"Point {point} does not fit into any child of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+                return None
+        logging.warning(f"Found node for point {point} at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+        return node
+    
+    def find_node_for_point3(self, point):
+        epsilon = 1e-9  # A small tolerance value
+
+        # Start from the root and go down the tree
+        node = self.root
+        while len(node.children) > 0:
+            logging.debug(f"Checking point {point} against children of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+            for child in node.children:
+                logging.debug(f"Checking point {point} against child at depth {child.depth} with bounds {child.min_corner} - {child.max_corner}")
+                
+                min_corner = child.min_corner - epsilon
+                max_corner = child.max_corner + epsilon
+                
+                if np.all(min_corner <= point) and np.all(point <= max_corner):
+                    node = child
+                    break
+            else:
+                # Point does not fit into any child -- this should not happen if the point fits into the octree bounds
+                logging.debug(f"Point {point} does not fit into any child of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+                return None
+        logging.warning(f"Found node for point {point} at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
+        return node
+
+
+
+    
     @staticmethod
     def get_color_based_on_attribute(attribute):
         # Define the color mapping
@@ -233,6 +361,8 @@ class CustomOctree:
         def traverse(node):
             if node is None:
                 return
+            logging.debug(f"For node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}, block_ids is type: {type(node.block_ids)}")
+
             #if node.depth == self.max_depth: # and 2 not in node.block_ids and 4:  Leaf node #and 1 not in node.block_ids #viewerviewer
             #if node.depth == self.max_depth and 2 not in node.block_ids and 3 not in node.block_ids and 4 not in node.block_ids:
             if node.depth == self.max_depth and 1 not in node.block_ids:
@@ -266,6 +396,7 @@ class CustomOctree:
     def visualize_octree_nodes(self):
         # Extract nodes from octree using the correct function
         node_data = self.get_nodes_for_visualization(min_offset_level=5, max_offset_level=10)
+        logging.debug(f"Found {len(node_data['single_block_nodes'])} single block nodes and {len(node_data['leaf_nodes'])} leaf nodes")
 
 
         # Process single_block_nodes: outline cubes
@@ -340,6 +471,9 @@ def tree_block_processing(coordinates_list):
         Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
     """ 
 
+    global tree_block_count
+    tree_block_count = {}
+    
     def load_and_translate_tree_block_data(dataframe, tree_id, translation):
         # Filter the data for the specific tree
         block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
@@ -375,7 +509,7 @@ def tree_block_processing(coordinates_list):
     print(f"Loaded data with shape {data.shape}")
 
     # Get random tree IDs
-    print(f'Coordinates list: {coordinates_list}')
+    #print(f'Coordinates list: {coordinates_list}')
     tree_count = len(coordinates_list)
     tree_ids = get_tree_ids(tree_count)
     print(f'Loading and processing {tree_ids} tree blocks...')
@@ -392,20 +526,15 @@ def tree_block_processing(coordinates_list):
     attributes = define_attributes(combined_data)
     block_ids = combined_data['Tree.ID'].tolist()
 
-    print(block_ids)
-
     return points, attributes, block_ids
 
 
-
-
-
-
 # Modify main function
-def main():
+def main2():
     # Process tree block data for a specified number of trees
     # Example usage:
     coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
+
     tree_block_data = tree_block_processing(coordinates_list)
 
 
@@ -422,6 +551,36 @@ def main():
     print(f"Created Octree with max depth {max_depth}")
 
     octree.visualize_octree_nodes()
+
+def main():
+    # Load the initial data
+    coordinates_list = [(20, 20, 20), (-5, -5, 0), (-20, -20, -20)]
+
+    #coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
+    points, attributes, block_ids = tree_block_processing(coordinates_list)
+
+    # Create the octree
+    octree = CustomOctree(points, attributes, block_ids, max_depth=8)
+    print(f"Initial Octree created with bounds of {octree.root.min_corner} - {octree.root.max_corner}")
+    print(f'octree root block_ids are: {type(octree.root.block_ids)}')
+
+
+
+    # Load additional data
+    new_coordinates_list = [(2, 2, 0), (1, 1, 0), (-5, -5, 0)]
+    new_points, new_attributes, new_block_ids = tree_block_processing(new_coordinates_list)
+
+    print(f'first couple of rows of new_block_ids: {new_block_ids[:2]}')
+    # Add new block to the octree
+    octree.add_block(new_points, new_attributes, new_block_ids)
+    print("Octree updated with additional data")
+    print(f'now octree root block_ids are: {type(octree.root.block_ids)}')
+
+
+
+    octree.visualize_octree_nodes()
+
+
 
 if __name__ == "__main__":
     main()
