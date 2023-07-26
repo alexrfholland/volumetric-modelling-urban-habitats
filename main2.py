@@ -105,7 +105,7 @@ print(f'tree Coords: {treeCoords}, treeAttributes: {treeAttributes}')
 print(treeAttributes['Diameter Breast Height'])
 
 
-tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing(treeCoords)
+tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing_complex(treeAttributes)
 
 # Add new block to the octree
 octree.add_block(tree_points, tree_attributes, tree_block_ids)

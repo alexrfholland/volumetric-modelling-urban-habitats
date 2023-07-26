@@ -1,3 +1,4 @@
+#to do - sort edge condition. 'add block' stuffs up when block points are beyond the octree bounds. to fix, flag all 'add block' points that are within edge nodes at some high level (ie. depth == 5) to perform an additioonal check to see if they are out of bounds
 '''
 
 CHATGPT - ALWAYS REVIEW THIS SO YOU KNOW THE AIM AND OVERALL STEPS
@@ -141,10 +142,39 @@ class OctreeNode:
         self.parent = None
 
     def calculate_dominant_attribute_and_colors(self):
+        """attribute_names_laser_scanning  = [ 
+            'Unnamed: 0',
+            'X.1',
+            'X',
+            'Tree.ID',
+            'treeName',
+            'Tree.size',
+            'DBH',
+            'x',
+            'y',
+            'z',
+            'Branch.size',
+            'Branch.type',
+            '...',
+            'isBoth',
+            'isNeither',
+            'species',
+            'birds',
+            'transform',
+            'indEst',
+            'indpLL',
+            'indpUL',
+            'speEst',
+            'spepLL',
+            'spepUL'
+            'BlockID']"""
+        
+        #check if tree size is a column
         attribute_columns = ['Rf', 'Gf', 'Bf']
         
         # Convert attributes list to pandas DataFrame
         df = pd.DataFrame(self.attributes)
+
 
         # Check if 'Rf', 'Gf', 'Bf' exist in the DataFrame columns
         if all(column in df.columns for column in attribute_columns):
@@ -152,8 +182,111 @@ class OctreeNode:
             dominant_color = df[attribute_columns].mode().values[0].tolist()
 
             return 'isColorDominant', dominant_color, dominant_color
+        
+
+
+        # Now inside the calculate_dominant_attribute_and_colors function:
+        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
+            # conditions to categorize branches
+            conditions = [
+            (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
+            (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
+            (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
+            ]
+
+            # corresponding categories
+            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
+
+            # Define a new column 'attribute_type' based on existing columns
+            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
+
+            # Define color mapping
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
+            }
+
+            # Define color mapping
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
+                'isDeadOnly': (1, 0, 1),  # Light intensity, bright green
+                'isBoth': (0, 1, 1)  # High intensity, bright yellow
+            }
+
+            # Check if 'isBoth' or 'isDeadOnly' exist in 'attribute_type', else find the most common
+            if (df['attribute_type'] == 'isBoth').any():
+                dominant_attribute = 'isBoth'
+            elif (df['attribute_type'] == 'isDeadOnly').any():
+                dominant_attribute = 'isDeadOnly'
+            else:
+                dominant_attribute = df['attribute_type'].mode()[0]
+
+            # Get the color corresponding to the dominant attribute
+            dominant_color = attribute_color_map[dominant_attribute]
+
+            return dominant_attribute, dominant_color, dominant_color
+        
         else:
-            return 'isDeadOnly', [1, 0, 0], [1,0,0]
+            return 'isDeadOnly', (1, 1, 1), (1, 1, 1)
+
+            """
+        elif 'Tree.size' in df.columns:
+            # Find most common size attribute in 'Tree.size' column
+            dominant_size = df['Tree.size'].mode().values[0]
+            
+            # Define color mapping
+            size_color_map = {
+                'small': (0.267004, 0.004874, 0.329415),
+                'medium': (0.20803, 0.718701, 0.472873),
+                'large': (0.993248, 0.906157, 0.143936)
+            }
+
+            # Get the color corresponding to the dominant size
+            dominant_color = size_color_map[dominant_size]
+
+            return dominant_size, dominant_color, dominant_color"""
+
+
+    """# Now inside the calculate_dominant_attribute_and_colors function:
+        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
+
+            # conditions to categorize branches
+            conditions = [
+                (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
+                (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
+                (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
+            ]
+
+            # corresponding categories
+            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
+            
+            # Define a new column 'attribute_type' based on existing columns
+            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
+
+            # Find the most common attribute type
+            dominant_attribute = df['attribute_type'].mode()[0]
+
+            # Define color mapping
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
+            }
+
+            # Get the color corresponding to the dominant attribute
+            dominant_color = attribute_color_map[dominant_attribute]
+            #print(f'dominant_colour when doing branch.type and branch.angle: {dominant_color}')
+
+            return dominant_attribute, dominant_color, dominant_color"""
+        
+
+
+
+    
     
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
@@ -161,6 +294,7 @@ class OctreeNode:
         return center, extent
 
     def split(self, max_depth):
+        #print if max_depth is 9:           
         if self.depth < max_depth:
             mid = (self.min_corner + self.max_corner) / 2
             bounds = [self.min_corner, mid, self.max_corner]
@@ -199,9 +333,6 @@ class OctreeNode:
 
                         
 
-    
-
-
 
     
 #a block is a collection of points (and their attributes) which might spread over multiple nodes in the octree
@@ -237,29 +368,6 @@ class CustomOctree:
 
         return min_corner, max_corner
 
-    
-    def add_block2(self, points, attributes, block_ids):
-        for point, attribute, block_id in zip(points, attributes, block_ids):
-            # Find the appropriate node to insert this point into
-            node, quadrant = self.find_node_for_point(point)
-
-            # If the point is not within any existing child node, create a new one
-            if node is self.root or quadrant is not None:
-                min_corner, max_corner = node.calculate_bounds_for_point(point)
-                child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
-                node.children.append(child)
-                child.parent = node
-
-                # Append the block_id to the current node and all its ancestors
-                node_to_update = node
-                while node_to_update is not None:
-                    node_to_update.block_ids.append(block_id)
-                    node_to_update = node_to_update.parent
-            else:
-                # Append the point, attribute, and block_id to the found leaf node
-                node.points = np.append(node.points, [point], axis=0)
-                node.attributes.append(attribute)
-                node.block_ids.append(block_id)
 
     def add_block(self, points, attributes, block_ids):
         def update_block_ids(node, block_id):
@@ -277,9 +385,11 @@ class CustomOctree:
                 child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
                 node.children.append(child)
                 child.parent = node
-
                 # Append the block_id to the current node and all its ancestors
                 update_block_ids(node, block_id)
+
+                child.split(self.max_depth + 1)
+
             else:
                 # Append the point, attribute, and block_id to the found leaf node
                 node.points = np.append(node.points, [point], axis=0)
@@ -289,10 +399,7 @@ class CustomOctree:
                 # Append the block_id to the found node and all its ancestors
                 update_block_ids(node, block_id)
 
-
-
-
-
+                node.split(self.max_depth + 1)
         
     def find_node_for_point(self, point):
         epsilon = 1e-9  # A small tolerance value
@@ -394,7 +501,9 @@ class CustomOctree:
 
             #if node.depth == self.max_depth: # and 2 not in node.block_ids and 4:  Leaf node #and 1 not in node.block_ids #viewerviewer
             #if node.depth == self.max_depth and 2 not in node.block_ids and 3 not in node.block_ids and 4 not in node.block_ids:
-            if node.depth == self.max_depth and 1 not in node.block_ids:
+            #if node.depth == self.max_depth and 1 not in node.block_ids:
+            if len(node.children) == 0 and 1 not in node.block_ids: #remove canopy from aerial lidar
+                #print(f'leaf node at {node.depth} of size {node.extent}')
                 leaf_nodes.append(node)
             elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
                 if len(set(node.block_ids)) == 1 and (node.depth == min_offset_level or not is_parent_single_block(node)):  
@@ -422,7 +531,88 @@ class CustomOctree:
         return color_mapping.get(block_id, [1, 1, 1])  # default to white if block_id not in mapping
     
 
-    def visualize_octree_nodes(self):
+    def visualize_octree_nodes(self, include_values=[11,12,13]):
+        # Extract nodes from octree using the correct function
+        node_data = self.get_nodes_for_visualization(min_offset_level=5, max_offset_level=10)
+        logging.debug(f"Found {len(node_data['single_block_nodes'])} single block nodes and {len(node_data['leaf_nodes'])} leaf nodes")
+
+        # Process single_block_nodes: outline cubes
+        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]
+        sizes_single_block = np.array([entry[1] for entry in node_data["single_block_nodes"]])  # Convert to np.array
+        positions_single_block = np.array([node.center for node in single_block_nodes])
+
+        # Use blockId to create colormap
+        blockIds_single_block = np.array([node.block_ids[0] for node in single_block_nodes])
+
+        
+        #print the type for single_block_nodes, sizes_single_block, positions_single_block and the first few data points of each
+        print(f'type of single_block_nodes is: {type(single_block_nodes)}')
+        print(f'type of sizes_single_block is: {type(sizes_single_block)}')
+        print(f'type of positions_single_block is: {type(positions_single_block)}')
+        print(f'type of blockIds_single_block is: {type(blockIds_single_block)}')
+    
+        print(f'first few data points of single_block_nodes are: {single_block_nodes[:5]}')
+        print(f'first few data points of sizes_single_block are: {sizes_single_block[:5]}')
+        print(f'first few data points of positions_single_block are: {positions_single_block[:5]}')
+        print(f'first few data points of blockIds_single_block are: {blockIds_single_block[:5]}')
+
+
+        #VISUALISE LARGER NODES AS TRANSPARENT BOUNDARY CUEBES
+        # Create a discrete colormap
+        unique_block_ids = np.unique(blockIds_single_block)
+        colors = cm.rainbow(np.linspace(0, 1, len(unique_block_ids)))
+
+        # Map each unique block ID to a unique value in range 0 to number of unique IDs
+        block_id_to_index = {id: i for i, id in enumerate(unique_block_ids)}
+
+        # Map each block ID in the list to its corresponding index
+        colourScalar = np.array([block_id_to_index[id] for id in blockIds_single_block])
+    
+        #print positions_single_block, sizes_single_block, blockId_indices with a tab seperating each value
+        print(f'positions_single_block is: {positions_single_block} \n sizes_single_block is: {sizes_single_block} \n colourScalar is: {colourScalar}')
+
+        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=True, line_width=2, cmap='tab10')
+
+        
+        #VISUALISE SELECT BLOCKIDS AS OUTLINE CUBES
+
+        include_values=[11,12,13]
+        # Create a boolean mask for blockIds_single_block to filter sizes and positions
+        mask = np.isin(blockIds_single_block, include_values)
+
+        # Create new lists including only elements where blockId_indices is in include_values
+        filtered_blockIds = blockIds_single_block[mask]
+        filtered_positions = positions_single_block[mask]
+        filtered_sizes_single_block = sizes_single_block[mask]
+        filtered_colour_scalar = colourScalar[mask]
+
+        print(f'filtered_blockIds is: {filtered_blockIds} \n filtered_positions is: {filtered_positions} \n filtered_sizes_single_block is: {filtered_sizes_single_block} \n filtered_colour_scalar is: {filtered_colour_scalar}')
+
+
+        glyphmapping.add_glyphs_to_visualiser(filtered_positions, filtered_sizes_single_block, filtered_colour_scalar, solid=True, line_width=2, cmap='tab10')
+
+        # VISUALISE LEAF NODES AS SOLID RGBA VOXELS
+        # Process leaf_nodes: solid cubes
+        leaf_nodes = [entry[0] for entry in node_data["leaf_nodes"]]
+        sizes_leaf = [entry[1] for entry in node_data["leaf_nodes"]]
+        positions_leaf = np.array([node.center for node in leaf_nodes])
+
+        #print the type for leaf_nodes, sizes_leaf, positions_leaf and the first few data points of each
+        print(f'type of leaf_nodes is: {type(leaf_nodes)}, type of sizes_leaf is: {type(sizes_leaf)}, type of positions_leaf is: {type(positions_leaf)}')
+        print(f'first few data points of leaf_nodes are: {leaf_nodes[:5]}, first few data points of sizes_leaf are: {sizes_leaf[:5]}, first few data points of positions_leaf are: {positions_leaf[:5]}')
+
+        # Use dominant_color for colors (array of RGB colours, values between 0-1)
+        dominant_colors = [node.calculate_dominant_attribute_and_colors()[1] for node in leaf_nodes]
+        colors_leaf = np.array(dominant_colors)
+
+        # Add glyphs to the visualiser with the dominant colors
+        glyphmapping.add_voxels_with_rgba_to_visualiser(positions_leaf, sizes_leaf, colors_leaf)
+
+        # Show the glyphs using pyvista
+        glyphmapping.plot()
+
+
+def visualize_octree_nodes2(self):
         # Extract nodes from octree using the correct function
         node_data = self.get_nodes_for_visualization(min_offset_level=5, max_offset_level=10)
         logging.debug(f"Found {len(node_data['single_block_nodes'])} single block nodes and {len(node_data['leaf_nodes'])} leaf nodes")
@@ -441,11 +631,14 @@ class CustomOctree:
         colors = cm.rainbow(np.linspace(0, 1, len(unique_block_ids)))
         cmap = ListedColormap(colors)
         
+        print(f'unqiue block ids are: {unique_block_ids}')
         # Map each unique block ID to a unique value in range 0 to number of unique IDs
         block_id_to_index = {id: i for i, id in enumerate(unique_block_ids)}
 
         # Map each block ID in the list to its corresponding index
         blockId_indices = np.array([block_id_to_index[id] for id in blockIds_single_block])
+
+        print(f'blocId_indices is: {blockId_indices}')
         
         # Use these indices to get colors from the colormap
         colors_single_block = cmap(blockId_indices)
@@ -455,21 +648,22 @@ class CustomOctree:
 
         ##viewerviewer
 
-        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=True, line_width=10, cmap='tab10')
+        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=True, line_width=5, cmap='tab10')
         #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=False, line_width=2, cmap='tab10')
 
         # Specify the values to include
-        include_values = [0] # replace this with your list of values
+        include_values = [11,12,13] # replace this with your list of values
         #include_values = [11,12] # replace this with your list of values
 
 
         # Create new lists including only elements where blockId_indices is in include_values
         new_blockId_indices = [id for i, id in enumerate(blockId_indices) if id in include_values]
-        new_positions_single_block = [positions_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
-        new_sizes_single_block = [sizes_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
+        print(f'new block id indices is: {new_blockId_indices}')
+        filtered_positions = [positions_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
+        filtered_sizes_single_block = [sizes_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
 
         # Pass these new lists to the function
-        glyphmapping.add_glyphs_to_visualiser(new_positions_single_block, new_sizes_single_block, new_blockId_indices, solid=False, line_width=2, cmap='tab10')
+        glyphmapping.add_glyphs_to_visualiser(filtered_positions, filtered_sizes_single_block, new_blockId_indices, solid=False, line_width=2, cmap='tab10')
 
 
 
@@ -526,7 +720,10 @@ def tree_block_processing_complex(df):
 
 
     def define_attributes(combined_data):
-        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        
+        print(f'combined_data is: {combined_data}')
+        #extract the data from these columns
+        attributes = combined_data[['Branch.type', 'Branch.angle', 'Tree.size', 'isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
         return attributes
 
 
@@ -546,8 +743,10 @@ def tree_block_processing_complex(df):
 
         # Process block data for each tree
         for tree_id, row in zip(tree_ids, tree_size_data.iterrows()):
+            #processed_block_data is a copy of the section of the .csv that is the selected tree, as a dataframe
             processed_block_data = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size)
             processed_data.append(processed_block_data)
+            print(f'processed_block_data for {tree_id} is: {processed_block_data}')
 
     # Combine the block data
     combined_data = pd.concat(processed_data)
@@ -653,7 +852,7 @@ def main2():
 
 
     # Create Octree
-    max_depth = 8    
+    max_depth = 4    
     octree = CustomOctree(points, attributes, block_ids, max_depth)
     print(f"Created Octree with max depth {max_depth}")
 
