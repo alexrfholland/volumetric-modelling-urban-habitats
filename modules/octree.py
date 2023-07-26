@@ -175,7 +175,6 @@ class OctreeNode:
         # Convert attributes list to pandas DataFrame
         df = pd.DataFrame(self.attributes)
 
-
         # Check if 'Rf', 'Gf', 'Bf' exist in the DataFrame columns
         if all(column in df.columns for column in attribute_columns):
             # Compute mode (most common color) along each column and store result as list
@@ -183,76 +182,7 @@ class OctreeNode:
 
             return 'isColorDominant', dominant_color, dominant_color
         
-
-
-        # Now inside the calculate_dominant_attribute_and_colors function:
         elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
-            # conditions to categorize branches
-            conditions = [
-            (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
-            (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
-            (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
-            ]
-
-            # corresponding categories
-            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
-
-            # Define a new column 'attribute_type' based on existing columns
-            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
-
-            # Define color mapping
-            attribute_color_map = {
-                'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
-                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
-                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
-            }
-
-            # Define color mapping
-            attribute_color_map = {
-                'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
-                'isDeadOnly': (1, 0, 1),  # Light intensity, bright green
-                'isBoth': (0, 1, 1)  # High intensity, bright yellow
-            }
-
-            # Check if 'isBoth' or 'isDeadOnly' exist in 'attribute_type', else find the most common
-            if (df['attribute_type'] == 'isBoth').any():
-                dominant_attribute = 'isBoth'
-            elif (df['attribute_type'] == 'isDeadOnly').any():
-                dominant_attribute = 'isDeadOnly'
-            else:
-                dominant_attribute = df['attribute_type'].mode()[0]
-
-            # Get the color corresponding to the dominant attribute
-            dominant_color = attribute_color_map[dominant_attribute]
-
-            return dominant_attribute, dominant_color, dominant_color
-        
-        else:
-            return 'isDeadOnly', (1, 1, 1), (1, 1, 1)
-
-            """
-        elif 'Tree.size' in df.columns:
-            # Find most common size attribute in 'Tree.size' column
-            dominant_size = df['Tree.size'].mode().values[0]
-            
-            # Define color mapping
-            size_color_map = {
-                'small': (0.267004, 0.004874, 0.329415),
-                'medium': (0.20803, 0.718701, 0.472873),
-                'large': (0.993248, 0.906157, 0.143936)
-            }
-
-            # Get the color corresponding to the dominant size
-            dominant_color = size_color_map[dominant_size]
-
-            return dominant_size, dominant_color, dominant_color"""
-
-
-    """# Now inside the calculate_dominant_attribute_and_colors function:
-        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
-
             # conditions to categorize branches
             conditions = [
                 (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
@@ -277,12 +207,78 @@ class OctreeNode:
                 'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
             }
 
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.267004, 0.004874, 0.329415),  #  Moderate intensity, deep purple
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
+            }
+
             # Get the color corresponding to the dominant attribute
             dominant_color = attribute_color_map[dominant_attribute]
             #print(f'dominant_colour when doing branch.type and branch.angle: {dominant_color}')
 
-            return dominant_attribute, dominant_color, dominant_color"""
+            return dominant_attribute, dominant_color, dominant_color
+
+        else:
+            return 'isDeadOnly', (1, 1, 1), (1, 1, 1)
         
+                
+
+        #this one is a hierachy where if the branch is deadlateral it goes to that
+        """ Now inside the calculate_dominant_attribute_and_colors function:
+        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
+            # conditions to categorize branches
+            conditions = [
+            (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
+            (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
+            (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
+            ]
+
+            # corresponding categories
+            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
+
+            # Define a new column 'attribute_type' based on existing columns
+            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
+
+            # Define color mapping
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
+                'isDeadOnly': (1, 0, 1),  # Light intensity, bright green
+                'isBoth': (0, 1, 1)  # High intensity, bright yellow
+            }
+
+            # Check if 'isBoth' or 'isDeadOnly' exist in 'attribute_type', else find the most common
+            if (df['attribute_type'] == 'isBoth').any():
+                dominant_attribute = 'isBoth'
+            elif (df['attribute_type'] == 'isDeadOnly').any():
+                dominant_attribute = 'isDeadOnly'
+            else:
+                dominant_attribute = df['attribute_type'].mode()[0]
+
+            # Get the color corresponding to the dominant attribute
+            dominant_color = attribute_color_map[dominant_attribute]
+
+            return dominant_attribute, dominant_color, dominant_color
+        
+        elif 'Tree.size' in df.columns:
+            # Find most common size attribute in 'Tree.size' column
+            dominant_size = df['Tree.size'].mode().values[0]
+            
+            # Define color mapping
+            size_color_map = {
+                'small': (0.267004, 0.004874, 0.329415),
+                'medium': (0.20803, 0.718701, 0.472873),
+                'large': (0.993248, 0.906157, 0.143936)
+            }
+
+            # Get the color corresponding to the dominant size
+            dominant_color = size_color_map[dominant_size]
+
+            return dominant_size, dominant_color, dominant_color"""
+        
+
 
 
 
@@ -714,7 +710,9 @@ def tree_block_processing_complex(df):
 
 
     def get_tree_ids(tree_size, count):
-        tree_id_ranges = {'small': range(0, 5), 'medium': range(5, 10), 'large': range(10, 17)}
+        #tree_id_ranges = {'small': range(0, 5), 'medium': range(5, 10), 'large': range(10, 17)}
+        tree_id_ranges = {'small': range(0, 5), 'medium': range(10, 17), 'large': range(10, 17)}
+
         print(f'count is: {count}')
         return random.choices(tree_id_ranges[tree_size], k=count)
 
