@@ -109,40 +109,9 @@ STEP 4 and 5: implement a query function and visualise bounding boxes
 1.2 Extend octree class so we can find nearest node of a particular type
 1.2.1 write a simple test function that can give a a type of node (ie. has block id = X) of then search for the nearest neighbouring node of a different type (ie. has block ID = Y)
 """
-import logging
 
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
-
-import numpy as np
-import pandas as pd
-import random
-import matplotlib.cm as cm
-
-try:
-    from . import glyphmapping  # Attempt a relative import
-except ImportError:
-    import glyphmapping  # Fall back to an absolute import
-
-print("start")
-from matplotlib.colors import ListedColormap
-
-
-import pyvista as pv
-
-class OctreeNode:
-    def __init__(self, min_corner, max_corner, points, attributes, block_ids, depth=0):
-        self.children = []
-        self.depth = depth
-        self.min_corner = np.array(min_corner)
-        self.max_corner = np.array(max_corner)
-        self.points = points
-        self.attributes = attributes
-        self.block_ids = block_ids
-        self.center, self.extent = self.get_geos()
-        self.parent = None
-
-    def calculate_dominant_attribute_and_colors(self):
-        """attribute_names_laser_scanning  = [ 
+"""ATTRIBUTES FROM CSV"
+attribute_names_laser_scanning  = [ 
             'Unnamed: 0',
             'X.1',
             'X',
@@ -168,6 +137,113 @@ class OctreeNode:
             'spepLL',
             'spepUL'
             'BlockID']"""
+
+from typing import List, Optional
+
+import logging
+
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+
+import numpy as np
+import pandas as pd
+import random
+import matplotlib.cm as cm
+
+try:
+    from . import glyphmapping  # Attempt a relative import
+    from . import block_inserter
+except ImportError:
+    import glyphmapping  # Fall back to an absolute import
+    import block_inserter
+
+print("start")
+from matplotlib.colors import ListedColormap
+
+
+import pyvista as pv
+
+
+class OctreeNode:
+    def __init__(self, 
+                min_corner: np.ndarray, 
+                max_corner: np.ndarray, 
+                points: np.ndarray, 
+                attributes: List[dict], 
+                block_ids: List[int], 
+                depth: Optional[int] = 0) -> None:
+        """
+        Create an octree node.
+
+        Args:
+            min_corner (np.ndarray): Array of minimum x, y, z coordinates for the bounding box of the node.
+            max_corner (np.ndarray): Array of maximum x, y, z coordinates for the bounding box of the node.
+            points (np.ndarray): Array of points contained within the node, each point is a 3D point represented as an array.
+            attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
+            block_ids (List[int]): List of block IDs, each ID corresponds to a point.
+            depth (int, optional): Depth of the node in the octree, defaults to 0 for the root node.
+
+        Returns:
+            None
+        """
+        
+        self.children = []
+        self.depth = depth
+        self.min_corner = np.array(min_corner)
+        self.max_corner = np.array(max_corner)
+        self.points = points
+        self.attributes = attributes
+        self.block_ids = block_ids
+        self.center, self.extent = self.get_geos()
+        self.parent = None
+
+        #print the types of all arguments
+        #print(f'type of min_corner, max_corner, points, attributes, block_ids, depth: {type(min_corner)}, {type(max_corner)}, {type(points)}, {type(attributes)}, {type(block_ids)}, {type(depth)}')
+        #print(f'first few values of min_corner, max_corner, points, attributes, block_ids, depth: {min_corner[0]}, {max_corner[0]}, {points[0]}, {attributes[0]}, {block_ids[0]}, {depth}')
+
+    def get_geos(self):
+        center = (self.min_corner + self.max_corner) / 2
+        extent = self.max_corner - self.min_corner
+        return center, extent
+
+    def split(self, max_depth):
+        #print if max_depth is 9:           
+        if self.depth < max_depth:
+            mid = (self.min_corner + self.max_corner) / 2
+            bounds = [self.min_corner, mid, self.max_corner]
+            for i in range(2):
+                for j in range(2):
+                    for k in range(2):
+                        new_min = [bounds[x][l] for x, l in zip([i, j, k], range(3))]
+                        new_max = [bounds[x][l] for x, l in zip([i+1, j+1, k+1], range(3))]
+                        in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
+                        new_points = self.points[in_range]
+                        new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
+                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
+                        if len(new_points) > 0:
+                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)
+                            child.split(max_depth)
+                            self.children.append(child)
+                            child.parent = self
+
+
+    def calculate_bounds_for_point(self, point):
+        # Calculate the midpoint of the current node
+        mid = (self.min_corner + self.max_corner) / 2
+
+        # The new minimum corner is the minimum of the current node's corners and the point
+        new_min = np.minimum(self.min_corner, point)
+
+        # The new maximum corner is the maximum of the current node's corners and the point
+        new_max = np.maximum(self.max_corner, point)
+
+        # Adjust the new minimum and maximum corners so that the point is within the middle of the new bounds
+        new_min = np.where(point <= mid, new_min, mid)
+        new_max = np.where(point > mid, new_max, mid)
+
+        return new_min, new_max
+
+    
+    def calculate_dominant_attribute_and_colors(self):
         
         #check if tree size is a column
         attribute_columns = ['Rf', 'Gf', 'Bf']
@@ -223,6 +299,7 @@ class OctreeNode:
         else:
             return 'isDeadOnly', (1, 1, 1), (1, 1, 1)
         
+        
                 
 
         #this one is a hierachy where if the branch is deadlateral it goes to that
@@ -276,80 +353,66 @@ class OctreeNode:
             # Get the color corresponding to the dominant size
             dominant_color = size_color_map[dominant_size]
 
-            return dominant_size, dominant_color, dominant_color"""
-        
-
-
-
-
+            return dominant_size, dominant_color, dominant_color"""   
     
-    
-    def get_geos(self):
-        center = (self.min_corner + self.max_corner) / 2
-        extent = self.max_corner - self.min_corner
-        return center, extent
-
-    def split(self, max_depth):
-        #print if max_depth is 9:           
-        if self.depth < max_depth:
-            mid = (self.min_corner + self.max_corner) / 2
-            bounds = [self.min_corner, mid, self.max_corner]
-            for i in range(2):
-                for j in range(2):
-                    for k in range(2):
-                        new_min = [bounds[x][l] for x, l in zip([i, j, k], range(3))]
-                        new_max = [bounds[x][l] for x, l in zip([i+1, j+1, k+1], range(3))]
-                        in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
-                        new_points = self.points[in_range]
-                        new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
-                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
-                        if len(new_points) > 0:
-                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)
-                            child.split(max_depth)
-                            self.children.append(child)
-                            child.parent = self
-
-
-    def calculate_bounds_for_point(self, point):
-        # Calculate the midpoint of the current node
-        mid = (self.min_corner + self.max_corner) / 2
-
-        # The new minimum corner is the minimum of the current node's corners and the point
-        new_min = np.minimum(self.min_corner, point)
-
-        # The new maximum corner is the maximum of the current node's corners and the point
-        new_max = np.maximum(self.max_corner, point)
-
-        # Adjust the new minimum and maximum corners so that the point is within the middle of the new bounds
-        new_min = np.where(point <= mid, new_min, mid)
-        new_max = np.where(point > mid, new_max, mid)
-
-        return new_min, new_max
 
 
                         
-
-
     
 #a block is a collection of points (and their attributes) which might spread over multiple nodes in the octree
 
 class CustomOctree:
-    def __init__(self, points, attributes, block_ids, max_depth):  # Added block_ids parameter
-        # Compute min and max corners for the bounding box
-        #min_corner = np.min(points, axis=0)
-        #max_corner = np.max(points, axis=0)
+    def __init__(self, 
+                 points: np.ndarray, 
+                 attributes: List[dict], 
+                 block_ids: List[int], 
+                 max_depth: int) -> None:
+        """
+        Create a sparse Octree structure.
 
+        Args:
+            points (np.ndarray): A 2D array of points to be included in the Octree, where each row represents a 3D point.
+            attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
+            block_ids (List[int]): List of block IDs, each ID corresponds to a point.
+            max_depth (int): Maximum depth of the Octree.
+
+        Returns:
+            None
+        """
         print(f'summary stats of points, attributes and block_ids: {np.shape(points)}, {np.shape(attributes)}, {np.shape(block_ids)}')
         print(f'input data for these looks like: {points[0]}, {attributes[0]}, {block_ids[0]}')
 
         min_corner, max_corner = self.fit_cube_bbox(points)
         self.max_depth = max_depth
 
-        self.root = OctreeNode(min_corner, max_corner, points, attributes, block_ids)  # Added block_ids argument
+        self.root = OctreeNode(min_corner, max_corner, points, attributes, block_ids)
         self.root.split(max_depth)
 
         self.base_size = np.max(self.root.max_corner - self.root.min_corner)
 
+    def create_child_node(self, 
+            min_corner: np.ndarray, 
+            max_corner: np.ndarray, 
+            points: np.ndarray, 
+            attributes: List[dict], 
+            block_ids: List[int], 
+            depth: Optional[int] = 0) -> None:
+        """
+        Create an octree node.
+
+        Args:
+            min_corner (np.ndarray): Array of minimum x, y, z coordinates for the bounding box of the node.
+            max_corner (np.ndarray): Array of maximum x, y, z coordinates for the bounding box of the node.
+            points (np.ndarray): Array of points contained within the node, each point is a 3D point represented as an array.
+            attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
+            block_ids (List[int]): List of block IDs, each ID corresponds to a point.
+            depth (int, optional): Depth of the node in the octree, defaults to 0 for the root node.
+
+        Returns:
+            OctreeNode
+        """
+        node = OctreeNode(min_corner, max_corner, points, attributes, block_ids, depth)
+        return node
 
     def compute_node_size(self, depth):
         return self.base_size / (2**depth)
@@ -365,7 +428,34 @@ class CustomOctree:
         return min_corner, max_corner
 
 
-    def add_block(self, points, attributes, block_ids):
+    def add_block(self, 
+              points: np.ndarray, 
+              attributes: List[dict], 
+              block_ids: List[int]) -> None:
+        """
+        Add a block of points to the Octree.
+
+        Each block is a collection of points and their associated attributes. Blocks might be spread over multiple nodes in the octree.
+        Each point is represented by a tuple (x, y, z) and has a set of attributes (e.g., RGB, intensity, etc.) represented as a dictionary.
+        Each point also has a block_id that represents which block this point belongs to.
+
+        Args:
+            points (np.ndarray): A numpy array containing the 3D coordinates of the points.
+            attributes (List[dict]): A list of dictionaries, each representing the attributes of a corresponding point.
+            block_ids (List[int]): A list of block IDs, each corresponding to a point.
+
+        Returns:
+            None
+        """
+        # Print the type of points, attributes and block_ids
+        print(f'summary stats of points, attributes and block_ids: {np.shape(points)}, {np.shape(attributes)}, {np.shape(block_ids)}')
+        print(f'type of points, attributes and block_ids: {type(points)}, {type(attributes)}, {type(block_ids)}')
+
+        #summary stats of points, attributes and block_ids: (127812, 3), (127812,), (127812,)
+        #input data for these looks like: 
+        # [-21.07499694   2.50499726   6.1621579 ] 
+        # {'Rf': 0.317647, 'Bf': 0.298039, 'Gf': 0.309804, 'B': 115.0, 'Composite': 130.666672, 'Dip (degrees)': 79.078636, 'Dip direction (degrees)': 87.14801, 'G': 201.0, 'Illuminance (PCV)': 0.766949, 'Nx': 0.980672, 'Ny': 0.048855, 'Nz': 0.189462, 'R': 76.0, 'element_type': 0.0, 'horizontality': 1} 
+        # 1
         def update_block_ids(node, block_id):
             while node is not None:
                 node.block_ids.append(block_id)
@@ -378,7 +468,8 @@ class CustomOctree:
             # If the point is not within any existing child node, create a new one
             if node is self.root or quadrant is not None:
                 min_corner, max_corner = node.calculate_bounds_for_point(point)
-                child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
+                #child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
+                child = self.create_child_node(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
                 node.children.append(child)
                 child.parent = node
                 # Append the block_id to the current node and all its ancestors
@@ -418,51 +509,6 @@ class CustomOctree:
             quadrant = i
 
         return node, quadrant
-
-
-        return node
-
-    def find_node_for_point2(self, point):
-        # Start from the root and go down the tree
-        node = self.root
-        while len(node.children) > 0:
-            logging.debug(f"Checking point {point} against children of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-            for child in node.children:
-                logging.debug(f"Checking point {point} against child at depth {child.depth} with bounds {child.min_corner} - {child.max_corner}")
-                if np.all(child.min_corner <= point) and np.all(point <= child.max_corner):
-                    node = child
-                    break
-            else:
-                # Point does not fit into any child -- this should not happen if the point fits into the octree bounds
-                logging.debug(f"Point {point} does not fit into any child of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-                return None
-        logging.warning(f"Found node for point {point} at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-        return node
-    
-    def find_node_for_point3(self, point):
-        epsilon = 1e-9  # A small tolerance value
-
-        # Start from the root and go down the tree
-        node = self.root
-        while len(node.children) > 0:
-            logging.debug(f"Checking point {point} against children of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-            for child in node.children:
-                logging.debug(f"Checking point {point} against child at depth {child.depth} with bounds {child.min_corner} - {child.max_corner}")
-                
-                min_corner = child.min_corner - epsilon
-                max_corner = child.max_corner + epsilon
-                
-                if np.all(min_corner <= point) and np.all(point <= max_corner):
-                    node = child
-                    break
-            else:
-                # Point does not fit into any child -- this should not happen if the point fits into the octree bounds
-                logging.debug(f"Point {point} does not fit into any child of node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-                return None
-        logging.warning(f"Found node for point {point} at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}")
-        return node
-
-
 
     
     @staticmethod
@@ -607,77 +653,6 @@ class CustomOctree:
         # Show the glyphs using pyvista
         glyphmapping.plot()
 
-
-def visualize_octree_nodes2(self):
-        # Extract nodes from octree using the correct function
-        node_data = self.get_nodes_for_visualization(min_offset_level=5, max_offset_level=10)
-        logging.debug(f"Found {len(node_data['single_block_nodes'])} single block nodes and {len(node_data['leaf_nodes'])} leaf nodes")
-
-
-        # Process single_block_nodes: outline cubes
-        single_block_nodes = [entry[0] for entry in node_data["single_block_nodes"]]
-        sizes_single_block = [entry[1] for entry in node_data["single_block_nodes"]]
-        positions_single_block = np.array([node.center for node in single_block_nodes])
-        
-        # Use blockId to create colormap
-        blockIds_single_block = np.array([node.block_ids[0] for node in single_block_nodes])
-        
-        # Create a discrete colormap
-        unique_block_ids = np.unique(blockIds_single_block)
-        colors = cm.rainbow(np.linspace(0, 1, len(unique_block_ids)))
-        cmap = ListedColormap(colors)
-        
-        print(f'unqiue block ids are: {unique_block_ids}')
-        # Map each unique block ID to a unique value in range 0 to number of unique IDs
-        block_id_to_index = {id: i for i, id in enumerate(unique_block_ids)}
-
-        # Map each block ID in the list to its corresponding index
-        blockId_indices = np.array([block_id_to_index[id] for id in blockIds_single_block])
-
-        print(f'blocId_indices is: {blockId_indices}')
-        
-        # Use these indices to get colors from the colormap
-        colors_single_block = cmap(blockId_indices)
-
-        color_scalar = [0] * len(blockId_indices)
-        print(color_scalar)
-
-        ##viewerviewer
-
-        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=True, line_width=5, cmap='tab10')
-        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, blockId_indices, solid=False, line_width=2, cmap='tab10')
-
-        # Specify the values to include
-        include_values = [11,12,13] # replace this with your list of values
-        #include_values = [11,12] # replace this with your list of values
-
-
-        # Create new lists including only elements where blockId_indices is in include_values
-        new_blockId_indices = [id for i, id in enumerate(blockId_indices) if id in include_values]
-        print(f'new block id indices is: {new_blockId_indices}')
-        filtered_positions = [positions_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
-        filtered_sizes_single_block = [sizes_single_block[i] for i, id in enumerate(blockId_indices) if id in include_values]
-
-        # Pass these new lists to the function
-        glyphmapping.add_glyphs_to_visualiser(filtered_positions, filtered_sizes_single_block, new_blockId_indices, solid=False, line_width=2, cmap='tab10')
-
-
-
-        
-        # Process leaf_nodes: solid cubes
-        leaf_nodes = [entry[0] for entry in node_data["leaf_nodes"]]
-        sizes_leaf = [entry[1] for entry in node_data["leaf_nodes"]]
-        positions_leaf = np.array([node.center for node in leaf_nodes])
-        
-        # Use dominant_color for colors (array of RGB colours, values between 0-1)
-        dominant_colors = [node.calculate_dominant_attribute_and_colors()[1] for node in leaf_nodes]
-        colors_leaf = np.array(dominant_colors)
-        
-        # Add glyphs to the visualiser with the dominant colors
-        glyphmapping.add_voxels_with_rgba_to_visualiser(positions_leaf, sizes_leaf, colors_leaf)
-        
-        # Show the glyphs using pyvista
-        glyphmapping.plot()
 
 
 def tree_block_processing_complex(df):
