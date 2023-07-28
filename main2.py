@@ -109,8 +109,8 @@ treeCoords, treeAttributes = UrbanForestParser.load_urban_forest_data(octree.roo
 #print(treeAttributes['Diameter Breast Height'])
 
 
-tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing_complex(treeAttributes)
-print('Add blocks to octree...')
+tree_points, tree_attributes, tree_block_ids, max_tree_count = Octree.tree_block_processing_complex(treeAttributes)
+print(f'Add blocks to octree with a maximum of {max_tree_count} blockID trees')
 # Add new block to the octree
 #octree.add_block(tree_points, tree_attributes, tree_block_ids)
 block_inserter.add_block(octree, tree_points, tree_attributes, tree_block_ids)
@@ -122,8 +122,14 @@ print("starting to change attributes")
 #block_inserter.change_attributes_old(octree, 'isBoth', ['isNeither'], 50000, 11, 1)  # assuming the block_id is 1
 
 #block_inserter.change_attributes_current(octree, 'isBoth', ['isNeither'], 50000, 11, 0)  # assuming the block_id is 1
-block_inserter.distribute_changes(octree, 'isNeither', 'isBoth', 1000, 11, 1)  # assuming the block_id is 1
-#print("Block attributes changed")
 
+for blockNo in range(11, max_tree_count + 1):
+    print(f'changing attributes for block {blockNo}... ')
+    block_inserter.distribute_changes(octree, 'isNeither', 'isBoth', 1000, blockNo, 1)  # assuming the block_id is 1
+    print(f'changed attributes for block {blockNo} ')
+
+print("finished changing attributes")
+
+print("visualizing octree")
 octree.visualize_octree_nodes()
 

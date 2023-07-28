@@ -830,10 +830,10 @@ def tree_block_processing_complex(df):
         Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
     """ 
 
-    global tree_block_count
-    tree_block_count = {'small': 10, 'medium': 11, 'large': 12}
+
+    #tree_block_count = {'small': 10, 'medium': 11, 'large': 12}
     
-    def load_and_translate_tree_block_data(dataframe, tree_id, translation, tree_size):
+    def load_and_translate_tree_block_data(dataframe, tree_id, translation, tree_size, tree_block_count):
         print(f"Processing tree id {tree_id}, size {tree_size}")
         block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
 
@@ -843,9 +843,13 @@ def tree_block_processing_complex(df):
         block_data['y'] += translation_y
         block_data['z'] += translation_z
 
-        block_data['BlockID'] = tree_block_count[tree_size]
+        tree_block_count = tree_block_count + 1
+        print(f'tree_block_count is: {tree_block_count}')
 
-        return block_data
+        #block_data['BlockID'] = tree_block_count[tree_size]
+        block_data['BlockID'] = tree_block_count
+
+        return block_data, tree_block_count
 
 
     def get_tree_ids(tree_size, count):
@@ -869,6 +873,7 @@ def tree_block_processing_complex(df):
     print(f"Loaded data with shape {data.shape}")
 
     # Process block data for each tree size
+    tree_block_count = 10
     processed_data = []
     for tree_size in ['small', 'medium', 'large']:
         tree_size_data = df[df['Tree Size'] == tree_size]
@@ -880,8 +885,9 @@ def tree_block_processing_complex(df):
         # Process block data for each tree
         for tree_id, row in zip(tree_ids, tree_size_data.iterrows()):
             #processed_block_data is a copy of the section of the .csv that is the selected tree, as a dataframe
-            processed_block_data = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size)
+            processed_block_data, tree_block_count = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size, tree_block_count)
             processed_data.append(processed_block_data)
+            print(f'processed_block_data for tree with block_id {tree_block_count}')
             #print(f'processed_block_data for {tree_id} is: {processed_block_data}')
 
     # Combine the block data
@@ -894,7 +900,7 @@ def tree_block_processing_complex(df):
     attributes = define_attributes(combined_data)
     block_ids = combined_data['BlockID'].tolist()
 
-    return points, attributes, block_ids
+    return points, attributes, block_ids, tree_block_count
 
 
 
