@@ -57,6 +57,9 @@ import modules.urbanforestparser as UrbanForestParser
 import numba as nb
 from collections import defaultdict
 
+import modules.block_inserter as block_inserter
+
+
 # File path to the LiDAR data
 file_path = 'data/sites/park.parquet'
 
@@ -95,21 +98,32 @@ print(f"Created Octree with max depth {max_depth} and extents {octree.root.min_c
 
 # Process tree block data for a specified number of trees  and add to the octree
 
+print(f'get ')
 #tree_count = 16  # Specify the number of tree blocks to process
 selected_data = lidar_dataframe.loc[lidar_dataframe['element_type'].isin([2, 4]), ['X', 'Y', 'Z']]
 #treeCoords = ConvertSites.select_random_ground_points(selected_data, tree_count)
-print(selected_data)
+#print(selected_data)
 
 treeCoords, treeAttributes = UrbanForestParser.load_urban_forest_data(octree.root.min_corner, octree.root.max_corner, selected_data)
-print(f'tree Coords: {treeCoords}, treeAttributes: {treeAttributes}')
-print(treeAttributes['Diameter Breast Height'])
+#print(f'tree Coords: {treeCoords}, treeAttributes: {treeAttributes}')
+#print(treeAttributes['Diameter Breast Height'])
 
 
 tree_points, tree_attributes, tree_block_ids = Octree.tree_block_processing_complex(treeAttributes)
-
+print('Add blocks to octree...')
 # Add new block to the octree
-octree.add_block(tree_points, tree_attributes, tree_block_ids)
+#octree.add_block(tree_points, tree_attributes, tree_block_ids)
+block_inserter.add_block(octree, tree_points, tree_attributes, tree_block_ids)
 print("Octree updated with additional data")
+
+print("starting to change attributes")
+# Change the attributes from 'isNeither' to 'isBoth', change 500 of them
+#block_inserter.change_attributes(octree, 'isBoth', ['isNeither'], 50, 11, 1)  # assuming the block_id is 1
+#block_inserter.change_attributes_old(octree, 'isBoth', ['isNeither'], 50000, 11, 1)  # assuming the block_id is 1
+
+#block_inserter.change_attributes_current(octree, 'isBoth', ['isNeither'], 50000, 11, 0)  # assuming the block_id is 1
+block_inserter.distribute_changes(octree, 'isNeither', 'isBoth', 1000, 11, 1)  # assuming the block_id is 1
+#print("Block attributes changed")
 
 octree.visualize_octree_nodes()
 

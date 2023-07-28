@@ -138,7 +138,7 @@ attribute_names_laser_scanning  = [
             'spepUL'
             'BlockID']"""
 
-from typing import List, Optional
+from typing import *
 
 import logging
 
@@ -151,13 +151,14 @@ import matplotlib.cm as cm
 
 try:
     from . import glyphmapping  # Attempt a relative import
-    from . import block_inserter
 except ImportError:
     import glyphmapping  # Fall back to an absolute import
-    import block_inserter
 
 print("start")
 from matplotlib.colors import ListedColormap
+import matplotlib.pyplot as plt
+
+from collections import Counter
 
 
 import pyvista as pv
@@ -165,12 +166,13 @@ import pyvista as pv
 
 class OctreeNode:
     def __init__(self, 
-                min_corner: np.ndarray, 
-                max_corner: np.ndarray, 
-                points: np.ndarray, 
-                attributes: List[dict], 
-                block_ids: List[int], 
-                depth: Optional[int] = 0) -> None:
+                 min_corner: np.ndarray, 
+                 max_corner: np.ndarray, 
+                 points: np.ndarray, 
+                 attributes: List[dict], 
+                 block_ids: List[int], 
+                 resource_types: Optional[List[str]] = [],
+                 depth: Optional[int] = 0) -> None:
         """
         Create an octree node.
 
@@ -180,6 +182,7 @@ class OctreeNode:
             points (np.ndarray): Array of points contained within the node, each point is a 3D point represented as an array.
             attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
             block_ids (List[int]): List of block IDs, each ID corresponds to a point.
+            resource_types (List[str], optional): List of resource types contained within the node, defaults to an empty list.
             depth (int, optional): Depth of the node in the octree, defaults to 0 for the root node.
 
         Returns:
@@ -193,8 +196,10 @@ class OctreeNode:
         self.points = points
         self.attributes = attributes
         self.block_ids = block_ids
+        self.resource_types = resource_types
         self.center, self.extent = self.get_geos()
         self.parent = None
+
 
         #print the types of all arguments
         #print(f'type of min_corner, max_corner, points, attributes, block_ids, depth: {type(min_corner)}, {type(max_corner)}, {type(points)}, {type(attributes)}, {type(block_ids)}, {type(depth)}')
@@ -217,10 +222,13 @@ class OctreeNode:
                         new_max = [bounds[x][l] for x, l in zip([i+1, j+1, k+1], range(3))]
                         in_range = np.all((new_min <= self.points) & (self.points <= new_max), axis=1)
                         new_points = self.points[in_range]
-                        new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
-                        new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
+
                         if len(new_points) > 0:
-                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, self.depth + 1)
+                            new_attributes = [self.attributes[idx] for idx, val in enumerate(in_range) if val]
+                            new_block_ids = [self.block_ids[idx] for idx, val in enumerate(in_range) if val]
+                            new_resource_types = [self.resource_types[idx] for idx, val in enumerate(in_range) if val] if self.resource_types else []
+
+                            child = OctreeNode(new_min, new_max, new_points, new_attributes, new_block_ids, new_resource_types, self.depth + 1)
                             child.split(max_depth)
                             self.children.append(child)
                             child.parent = self
@@ -242,47 +250,39 @@ class OctreeNode:
 
         return new_min, new_max
 
-    
-    def calculate_dominant_attribute_and_colors(self):
-        
-        #check if tree size is a column
-        attribute_columns = ['Rf', 'Gf', 'Bf']
-        
-        # Convert attributes list to pandas DataFrame
-        df = pd.DataFrame(self.attributes)
 
-        # Check if 'Rf', 'Gf', 'Bf' exist in the DataFrame columns
-        if all(column in df.columns for column in attribute_columns):
-            # Compute mode (most common color) along each column and store result as list
-            dominant_color = df[attribute_columns].mode().values[0].tolist()
+        
+    def get_colors(self):
+
+        attribute_columns = ['Rf', 'Gf', 'Bf']
+
+        # Check if 'Rf', 'Gf', 'Bf' exist in the first dictionary of the attributes list
+        if all(column in self.attributes[0] for column in attribute_columns):
+            # Take the first color from the attributes list
+            dominant_color = [self.attributes[0][col] for col in attribute_columns]
 
             return 'isColorDominant', dominant_color, dominant_color
-        
-        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
-            # conditions to categorize branches
-            conditions = [
-                (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
-                (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
-                (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
-            ]
-
-            # corresponding categories
-            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
+    
+        elif 'grow_depthA' in self.attributes[0]:
+            # Get the 'grow_depth' from the attributes list
+            depth = self.attributes[0]['grow_depth']
             
-            # Define a new column 'attribute_type' based on existing columns
-            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
+            # Create a colormap
+            cm = plt.get_cmap('rainbow')
+            
+            # Create a dictionary mapping integers from 0 to 30 to colors in the rainbow spectrum
+            colors = {i: cm(1.*i/10) for i in range(11)}
+            
+            # Get the color corresponding to the 'grow_depth', or the color of the maximum depth if 'grow_depth' is greater than 30
+            dominant_color = colors.get(depth if depth <= 10 else 10)[:3] # Ignore alpha value
+            
+            return f'grow_depth {depth}', dominant_color, dominant_color
 
-            # Find the most common attribute type
-            dominant_attribute = df['attribute_type'].mode()[0]
+        elif 'typeA' in self.attributes[0]:
+            # Get the type from the attributes list
+            dominant_attribute = self.attributes[0]['type']
 
             # Define color mapping
-            attribute_color_map = {
-                'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
-                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
-                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
-            }
-
             attribute_color_map = {
                 'isNeither': (0.8, 0.8, 0.8),  # Light gray
                 'isLateralOnly': (0.267004, 0.004874, 0.329415),  #  Moderate intensity, deep purple
@@ -291,72 +291,65 @@ class OctreeNode:
             }
 
             # Get the color corresponding to the dominant attribute
-            dominant_color = attribute_color_map[dominant_attribute]
-            #print(f'dominant_colour when doing branch.type and branch.angle: {dominant_color}')
+            dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # default color is black
 
             return dominant_attribute, dominant_color, dominant_color
-
-        else:
-            return 'isDeadOnly', (1, 1, 1), (1, 1, 1)
         
-        
-                
-
-        #this one is a hierachy where if the branch is deadlateral it goes to that
-        """ Now inside the calculate_dominant_attribute_and_colors function:
-        elif all(column in df.columns for column in ['Branch.type', 'Branch.angle']):
-            # conditions to categorize branches
-            conditions = [
-            (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
-            (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
-            (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
-            ]
-
-            # corresponding categories
-            categories = ['isDeadOnly', 'isLateralOnly', 'isBoth']
-
-            # Define a new column 'attribute_type' based on existing columns
-            df['attribute_type'] = np.select(conditions, categories, default='isNeither')
+        elif self.resource_types is not None:
+            # Get the type from the attributes list
+            dominant_attribute = self.resource_types[0]
 
             # Define color mapping
             attribute_color_map = {
                 'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.3, 0.3, 0.3),  # Darker gray
-                'isDeadOnly': (1, 0, 1),  # Light intensity, bright green
-                'isBoth': (0, 1, 1)  # High intensity, bright yellow
+                'isLateralOnly': (0.267004, 0.004874, 0.329415),  #  Moderate intensity, deep purple
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
             }
-
-            # Check if 'isBoth' or 'isDeadOnly' exist in 'attribute_type', else find the most common
-            if (df['attribute_type'] == 'isBoth').any():
-                dominant_attribute = 'isBoth'
-            elif (df['attribute_type'] == 'isDeadOnly').any():
-                dominant_attribute = 'isDeadOnly'
-            else:
-                dominant_attribute = df['attribute_type'].mode()[0]
 
             # Get the color corresponding to the dominant attribute
-            dominant_color = attribute_color_map[dominant_attribute]
+            dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # default color is black
 
             return dominant_attribute, dominant_color, dominant_color
+
+
+        else:
+            return 'No Attributes', (0, 0, 0), (0, 0, 0)
+
+    #a more complex version of 'get_colours', where the attribute list of dictionaries is converted into a pandas dataframe so we can find the most common attribute
+    def calculate_dominant_attribute_and_colors(self):
+
+            # Convert attributes list to pandas DataFrame
+            df = pd.DataFrame(self.attributes)
+
+            # Check if 'Rf', 'Gf', 'Bf' exist in the DataFrame columns
+            attribute_columns = ['Rf', 'Gf', 'Bf']
+            if all(column in df.columns for column in attribute_columns):
+                # Compute mode (most common color) along each column and store result as list
+                dominant_color = df[attribute_columns].mode().values[0].tolist()
+                dominant_attribute = 'isColorDominant'
         
-        elif 'Tree.size' in df.columns:
-            # Find most common size attribute in 'Tree.size' column
-            dominant_size = df['Tree.size'].mode().values[0]
-            
-            # Define color mapping
-            size_color_map = {
-                'small': (0.267004, 0.004874, 0.329415),
-                'medium': (0.20803, 0.718701, 0.472873),
-                'large': (0.993248, 0.906157, 0.143936)
-            }
 
-            # Get the color corresponding to the dominant size
-            dominant_color = size_color_map[dominant_size]
+            elif 'type' in df.columns:
+                # Find the most common attribute type
+                dominant_attribute = df['type'].mode()[0]
+                
+                # Define color mapping
+                attribute_color_map = {
+                    'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                    'isLateralOnly': (0.267004, 0.004874, 0.329415),  #  Moderate intensity, deep purple
+                    'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                    'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
+                }
 
-            return dominant_size, dominant_color, dominant_color"""   
-    
+                # Get the color corresponding to the dominant attribute
+                dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # Default to black if attribute type is not in map
+            else:
+                # Default attribute and color if 'type' and color information are not available
+                dominant_attribute = 'isDeadOnly'
+                dominant_color = [1, 1, 1]
 
-
+            return dominant_attribute, dominant_color, dominant_color
                         
     
 #a block is a collection of points (and their attributes) which might spread over multiple nodes in the octree
@@ -391,28 +384,31 @@ class CustomOctree:
         self.base_size = np.max(self.root.max_corner - self.root.min_corner)
 
     def create_child_node(self, 
-            min_corner: np.ndarray, 
-            max_corner: np.ndarray, 
-            points: np.ndarray, 
-            attributes: List[dict], 
-            block_ids: List[int], 
-            depth: Optional[int] = 0) -> None:
-        """
-        Create an octree node.
+                min_corner: np.ndarray, 
+                max_corner: np.ndarray, 
+                points: np.ndarray, 
+                attributes: List[dict], 
+                block_ids: List[int],
+                resource_types: Optional[List[str]] = [],
+                depth: Optional[int] = 0) -> 'OctreeNode':
+            """
+            Create an octree node.
 
-        Args:
-            min_corner (np.ndarray): Array of minimum x, y, z coordinates for the bounding box of the node.
-            max_corner (np.ndarray): Array of maximum x, y, z coordinates for the bounding box of the node.
-            points (np.ndarray): Array of points contained within the node, each point is a 3D point represented as an array.
-            attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
-            block_ids (List[int]): List of block IDs, each ID corresponds to a point.
-            depth (int, optional): Depth of the node in the octree, defaults to 0 for the root node.
+            Args:
+                min_corner (np.ndarray): Array of minimum x, y, z coordinates for the bounding box of the node.
+                max_corner (np.ndarray): Array of maximum x, y, z coordinates for the bounding box of the node.
+                points (np.ndarray): Array of points contained within the node, each point is a 3D point represented as an array.
+                attributes (List[dict]): List of dictionaries, each dictionary represents attributes of a corresponding point.
+                block_ids (List[int]): List of block IDs, each ID corresponds to a point.
+                resource_types (List[str], optional): List of resource types contained within the node, defaults to an empty list.
+                depth (int, optional): Depth of the node in the octree, defaults to 0 for the root node.
 
-        Returns:
-            OctreeNode
-        """
-        node = OctreeNode(min_corner, max_corner, points, attributes, block_ids, depth)
-        return node
+            Returns:
+                OctreeNode
+            """
+            node = OctreeNode(min_corner, max_corner, points, attributes, block_ids, resource_types, depth)
+            return node
+
 
     def compute_node_size(self, depth):
         return self.base_size / (2**depth)
@@ -428,10 +424,155 @@ class CustomOctree:
         return min_corner, max_corner
 
 
+    def update_block_ids_and_resource_types(self, node, block_id, resource_type):
+        while node is not None:
+            node.block_ids.append(block_id)
+            node.resource_types.append(resource_type)
+            node = node.parent
+
+    def get_siblings(self, thisNode):
+        if thisNode.parent is None:
+            return None  # root node has no siblings
+        siblings = [node for node in thisNode.parent.children if node is not thisNode]
+        return siblings
+
+    #find one leaf node of this type [old, consider deleting]
+    def find_leaf_node(self, node: 'OctreeNode', block_id: int, node_types: List[str]) -> 'OctreeNode':
+        """
+        Find a leaf node of an OctreeNode with a specified block_id and one of the specified node types.
+
+        Args:
+            node (OctreeNode): The OctreeNode to start the search from.
+            block_id (int): The ID of the block to restrict the search to.
+            node_types (List[str]): List of node types to search for.
+
+        Returns:
+            OctreeNode: A leaf node that fits the criteria, or None if none is found.
+        """
+        if block_id in node.block_ids and node.attributes[0].get("type") in node_types and not node.children:
+            return node
+
+        random.shuffle(node.children)  # shuffle the children to ensure random selection
+
+        for child in node.children:
+            found_node = self.find_leaf_node(child, block_id, node_types)
+            if found_node is not None:
+                return found_node
+
+        return None
+    
+    #With this implementation, the method may return more than count nodes if count is reached within a group of siblings, but it will stop looking for more nodes once count is reached.
+    def get_leaves_simple(self, node: 'OctreeNode', block_id: int, resource_type: str = None, count: Optional[int] = None) -> List['OctreeNode']:
+        """
+        Get all the leaf nodes of an OctreeNode with a specified block_id and, optionally, a specified resource type.
+
+        Args:
+            node (OctreeNode): The OctreeNode to get the leaf nodes from.
+            block_id (int): The ID of the block to restrict the search to.
+            resource_type (str, optional): If specified, only return nodes containing this resource type. If None, return all nodes. Default is None.
+            count (int, optional): If specified, only return up to this number of nodes. If None, return all nodes. Default is None.
+
+        Returns:
+            List[OctreeNode]: The list of leaf nodes.
+        """
+        leaf_nodes = []
+
+        # Recursively go through all the children of the node
+        for child in node.children:
+            if block_id in child.block_ids:  # Check if block_id is in the list of block_ids of the child node
+                if resource_type is None or resource_type in child.resource_types:
+                    # If the child is a leaf, append it to the list
+                    if not child.children:
+                        leaf_nodes.append(child)
+                    # If the child is not a leaf, recursively get its leaf nodes
+                    else:
+                        leaf_nodes.extend(self.get_leaves(child, block_id, resource_type))
+
+                    # If we've hit the count limit, stop and return
+                    if count is not None and len(leaf_nodes) >= count:
+                        return leaf_nodes
+
+        return leaf_nodes
+    
+    #with this method, we get the exact count
+    def get_leaves(self, node: 'OctreeNode', block_id: int, resource_type: str = None, count: Optional[int] = None) -> List['OctreeNode']:
+        """
+        Get all the leaf nodes of an OctreeNode with a specified block_id and, optionally, a specified resource type.
+
+        Args:
+            node (OctreeNode): The OctreeNode to get the leaf nodes from.
+            block_id (int): The ID of the block to restrict the search to.
+            resource_type (str, optional): If specified, only return nodes containing this resource type. If None, return all nodes. Default is None.
+            count (int, optional): If specified, only return up to this number of nodes. If None, return all nodes. Default is None.
+
+        Returns:
+            List[OctreeNode]: The list of leaf nodes.
+        """
+        leaf_nodes = []
+        stack = [node]
+
+        while stack and (count is None or len(leaf_nodes) < count):
+            current_node = stack.pop()
+
+            if block_id in current_node.block_ids:  # Check if block_id is in the list of block_ids of the current_node
+                if resource_type is None or resource_type in current_node.resource_types:
+                    # If the current_node is a leaf, append it to the list
+                    if not current_node.children:
+                        leaf_nodes.append(current_node)
+                        continue
+
+                    # If the current_node is not a leaf, add its children to the stack
+                    stack.extend(current_node.children)
+
+        # If more than count nodes were added, trim the list down to size
+        if count is not None and len(leaf_nodes) > count:
+            leaf_nodes = leaf_nodes[:count]
+
+        return leaf_nodes
+    
+        
+    #this isnt working
+    def find_lowest_common_ancestor_of_block(self, node: 'OctreeNode', block_id: int) -> 'OctreeNode':
+        """
+        this isnt working...
+        Find the lowest common ancestor of all leaf nodes that contain a certain block within an Octree.
+
+        The LCA in this context is the highest node (closest to the root) that encompasses all leaves of a certain
+        block_id, and no other block_id can be found among its descendants.
+
+        Args:
+            node (OctreeNode): The OctreeNode to start the search from.
+            block_id (int): The ID of the block to find the local root for.
+
+        Returns:
+            OctreeNode: The local root of the block, i.e., the lowest common ancestor of all leaves containing the block_id.
+        """
+        if block_id in node.block_ids:  # If the current node is part of the block
+            # Check if any of the children of the current node are also part of the block
+            child_contain_block = [block_id in child.block_ids for child in node.children]
+            if any(child_contain_block):
+                # If so, recursively search for the local root starting from the child that contains the block
+                for i, contains in enumerate(child_contain_block):
+                    if contains:
+                        return self.find_lowest_common_ancestor_of_block(node.children[i], block_id)
+            else:
+                # If none of the children are part of the block, the current node is the local root
+                block_ids_counts = Counter(node.block_ids)
+                print(f"Found local root at depth {node.depth} for block_id {block_id}.")
+                print(f"Block IDs of this root: {node.block_ids}")
+                print(f"Block IDs at the local root: {set(block_ids_counts.keys())}")
+                print(f"Block IDs frequencies: {block_ids_counts}")
+                return node
+        else:
+            print(f"No local root found for block_id {block_id} in octree node with block ids of {node.block_ids}.")
+            # If the current node is not part of the block, return None
+            return None
+
+
     def add_block(self, 
-              points: np.ndarray, 
-              attributes: List[dict], 
-              block_ids: List[int]) -> None:
+                points: np.ndarray, 
+                attributes: List[dict], 
+                block_ids: List[int]) -> None:
         """
         Add a block of points to the Octree.
 
@@ -487,7 +628,7 @@ class CustomOctree:
                 update_block_ids(node, block_id)
 
                 node.split(self.max_depth + 1)
-        
+            
     def find_node_for_point(self, point):
         epsilon = 1e-9  # A small tolerance value
 
@@ -520,7 +661,26 @@ class CustomOctree:
                          "isNeither": [1, 1, 1]}
         return color_mapping[attribute]
 
-    def get_nodes_for_visualization(self, min_offset_level, max_offset_level):
+    
+    def get_leaf_and_block_nodes(self, min_offset_level: int, max_offset_level: int, block_id: Optional[int] = None, get_leaves: bool = True) -> Dict[str, List[Tuple['Node', float]]]:
+        """
+        Get a list of leaf and block nodes for visualization.
+
+        This method traverses the Octree and collects the leaf nodes and single block nodes that meet specific criteria.
+        A node will be added to single block nodes list if it's a single block node and either it's at the min_offset_level depth,
+        or it does not have a parent that's a single block node.
+
+        Args:
+            min_offset_level (int): The minimum depth level of the octree nodes to be returned.
+            max_offset_level (int): The maximum depth level of the octree nodes to be returned.
+            block_id (int, optional): Block ID to filter the nodes. If provided, only the nodes containing this block ID will be returned.
+            get_leaves (bool, optional): Flag to indicate whether to include leaf nodes in the output. Default is True.
+
+        Returns:
+            dict: A dictionary containing two lists of tuples. Each tuple contains a node and its size.
+                "single_block_nodes": List of tuples. Each tuple contains a node that's a single block and the size of the node.
+                "leaf_nodes": List of tuples. Each tuple contains a leaf node and the size of the node. This list is empty if get_leaves is False.
+        """
         single_block_nodes = []
         leaf_nodes = []
 
@@ -533,7 +693,6 @@ class CustomOctree:
                 parent = parent.parent
             return False
 
-
         # a node will be added to single_block_nodes if it's a single block node and either 
         # it's at the min_offset_level depth, or it does not have a parent that's a single block node.
         def traverse(node):
@@ -541,28 +700,29 @@ class CustomOctree:
                 return
             logging.debug(f"For node at depth {node.depth} with bounds {node.min_corner} - {node.max_corner}, block_ids is type: {type(node.block_ids)}")
 
-            #if node.depth == self.max_depth: # and 2 not in node.block_ids and 4:  Leaf node #and 1 not in node.block_ids #viewerviewer
-            #if node.depth == self.max_depth and 2 not in node.block_ids and 3 not in node.block_ids and 4 not in node.block_ids:
-            #if node.depth == self.max_depth and 1 not in node.block_ids:
-            if len(node.children) == 0 and 1 not in node.block_ids: #remove canopy from aerial lidar
-                #print(f'leaf node at {node.depth} of size {node.extent}')
+            # Check if we are interested in this node's block id
+            if block_id is not None and block_id not in node.block_ids:
+                return
+
+            #if get_leaves and len(node.children) == 0 and 1 not in node.block_ids: 
+            if get_leaves and len(node.children) == 0:
                 leaf_nodes.append(node)
-            elif min_offset_level <= node.depth <= max_offset_level:  # Within depth range
+            elif min_offset_level <= node.depth <= max_offset_level:  
                 if len(set(node.block_ids)) == 1 and (node.depth == min_offset_level or not is_parent_single_block(node)):  
                     single_block_nodes.append(node)
+
             # Recurse for children
             for child in node.children:
                 traverse(child)
-
 
         # Kick off the traversal
         traverse(self.root)
 
         return {
             "single_block_nodes": [(node, self.compute_node_size(node.depth)) for node in single_block_nodes],
-            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes]
-        }
-    
+            "leaf_nodes": [(node, self.compute_node_size(node.depth)) for node in leaf_nodes] if get_leaves else []
+    }
+
 
     @staticmethod
     def get_color_based_on_block_id(block_id):
@@ -575,7 +735,10 @@ class CustomOctree:
 
     def visualize_octree_nodes(self, include_values=[11,12,13]):
         # Extract nodes from octree using the correct function
-        node_data = self.get_nodes_for_visualization(min_offset_level=5, max_offset_level=10)
+        node_data = self.get_leaf_and_block_nodes(min_offset_level=2, max_offset_level=10, get_leaves=True)
+        #node_data = self.get_nodes_for_visualization(min_offset_level=0, max_offset_level=10, get_leaves=True)
+
+
         logging.debug(f"Found {len(node_data['single_block_nodes'])} single block nodes and {len(node_data['leaf_nodes'])} leaf nodes")
 
         # Process single_block_nodes: outline cubes
@@ -613,7 +776,8 @@ class CustomOctree:
         #print positions_single_block, sizes_single_block, blockId_indices with a tab seperating each value
         print(f'positions_single_block is: {positions_single_block} \n sizes_single_block is: {sizes_single_block} \n colourScalar is: {colourScalar}')
 
-        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=True, line_width=2, cmap='tab10')
+        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=True, line_width=2, cmap='tab10')
+        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=False, line_width=5, cmap='tab10')
 
         
         #VISUALISE SELECT BLOCKIDS AS OUTLINE CUBES
@@ -631,7 +795,7 @@ class CustomOctree:
         print(f'filtered_blockIds is: {filtered_blockIds} \n filtered_positions is: {filtered_positions} \n filtered_sizes_single_block is: {filtered_sizes_single_block} \n filtered_colour_scalar is: {filtered_colour_scalar}')
 
 
-        glyphmapping.add_glyphs_to_visualiser(filtered_positions, filtered_sizes_single_block, filtered_colour_scalar, solid=True, line_width=2, cmap='tab10')
+        #glyphmapping.add_glyphs_to_visualiser(filtered_positions, filtered_sizes_single_block, filtered_colour_scalar, solid=True, line_width=2, cmap='tab10')
 
         # VISUALISE LEAF NODES AS SOLID RGBA VOXELS
         # Process leaf_nodes: solid cubes
@@ -644,7 +808,7 @@ class CustomOctree:
         print(f'first few data points of leaf_nodes are: {leaf_nodes[:5]}, first few data points of sizes_leaf are: {sizes_leaf[:5]}, first few data points of positions_leaf are: {positions_leaf[:5]}')
 
         # Use dominant_color for colors (array of RGB colours, values between 0-1)
-        dominant_colors = [node.calculate_dominant_attribute_and_colors()[1] for node in leaf_nodes]
+        dominant_colors = [node.get_colors()[1] for node in leaf_nodes]
         colors_leaf = np.array(dominant_colors)
 
         # Add glyphs to the visualiser with the dominant colors
@@ -694,13 +858,12 @@ def tree_block_processing_complex(df):
 
     def define_attributes(combined_data):
         
-        print(f'combined_data is: {combined_data}')
         #extract the data from these columns
-        attributes = combined_data[['Branch.type', 'Branch.angle', 'Tree.size', 'isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
+        attributes = combined_data[['Branch.type', 'Branch.angle', 'Tree.size', 'type']].to_dict('records')
         return attributes
 
 
-    csv_file = 'data/branchPredictions - full.csv'
+    csv_file = 'data/edited_branchPredictions - adjusted.csv'
 
     data = pd.read_csv(csv_file)
     print(f"Loaded data with shape {data.shape}")
@@ -719,7 +882,7 @@ def tree_block_processing_complex(df):
             #processed_block_data is a copy of the section of the .csv that is the selected tree, as a dataframe
             processed_block_data = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size)
             processed_data.append(processed_block_data)
-            print(f'processed_block_data for {tree_id} is: {processed_block_data}')
+            #print(f'processed_block_data for {tree_id} is: {processed_block_data}')
 
     # Combine the block data
     combined_data = pd.concat(processed_data)
@@ -734,134 +897,13 @@ def tree_block_processing_complex(df):
     return points, attributes, block_ids
 
 
-def tree_block_processing(coordinates_list):
-    """
-    Load and process the tree block data.
-
-    Args:
-        coordinates_list (list): A list of tuples where each tuple contains x, y, z coordinates to translate tree blocks.
-
-    Returns:
-        Tuple[np.ndarray, dict, list]: The points, attributes, and block IDs of the processed data.
-    """ 
-
-    global tree_block_count
-    tree_block_count = {}
-    
-    def load_and_translate_tree_block_data(dataframe, tree_id, translation):
-        # Filter the data for the specific tree
-        block_data = dataframe[dataframe['Tree.ID'] == tree_id].copy()
-
-        print(translation)
-
-        # Apply translation
-        translation_x, translation_y, translation_z = translation
-        block_data['x'] += translation_x
-        block_data['y'] += translation_y
-        block_data['z'] += translation_z
-
-        # Update block IDs to the format "Tree-[unique number]"
-        global tree_block_count
-        if tree_id in tree_block_count:
-            tree_block_count[tree_id] += 1
-        else:
-            tree_block_count[tree_id] = 1
-
-        block_data['BlockID'] = f'Tree-{tree_id}-{tree_block_count[tree_id]}'
-
-        return block_data
-
-    def get_tree_ids(count):
-        print(f'count is: {count}')
-        return random.choices(range(1, 17), k=count)
-
-
-    def define_attributes(combined_data):
-        attributes = combined_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
-        return attributes
-
-
-    csv_file = 'data/branchPredictions - full.csv'
-
-    data = pd.read_csv(csv_file)
-    print(f"Loaded data with shape {data.shape}")
-
-    # Get random tree IDs
-    #print(f'Coordinates list: {coordinates_list}')
-    tree_count = len(coordinates_list)
-    print (f'coordinates_list is {coordinates_list}')
-    tree_ids = get_tree_ids(tree_count)
-    print(f'Loading and processing {tree_ids} tree blocks...')
-
-    # Process block data for each tree
-    processed_data = [load_and_translate_tree_block_data(data, tree_id, coordinates)
-                      for tree_id, coordinates in zip(tree_ids, coordinates_list)]
-
-    # Combine the block data
-    combined_data = pd.concat(processed_data)
-
-    # Extract points, attributes, and block IDs
-    points = combined_data[['x', 'y', 'z']].to_numpy()
-    attributes = define_attributes(combined_data)
-    block_ids = combined_data['Tree.ID'].tolist()
-
-    return points, attributes, block_ids
-
-
-# Modify main function
-def main2():
-    # Process tree block data for a specified number of trees
-    # Example usage:
-    coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
-
-    tree_block_data = tree_block_processing(coordinates_list)
-
-
-    if tree_block_data is None:
-        print("Error: Tree block processing failed.")
-        return
-    
-    points, attributes, block_ids = tree_block_data
-
-
-    # Create Octree
-    max_depth = 4    
-    octree = CustomOctree(points, attributes, block_ids, max_depth)
-    print(f"Created Octree with max depth {max_depth}")
-
-    octree.visualize_octree_nodes()
-
-def main():
-    # Load the initial data
-    coordinates_list = [(20, 20, 20), (-5, -5, 0), (-20, -20, -20)]
-
-    #coordinates_list = [(5, 5, 0), (-5, -5, 0), (10, -10, 0)]
-    points, attributes, block_ids = tree_block_processing(coordinates_list)
-
-    # Create the octree
-    octree = CustomOctree(points, attributes, block_ids, max_depth=8)
-    print(f"Initial Octree created with bounds of {octree.root.min_corner} - {octree.root.max_corner}")
-    print(f'octree root block_ids are: {type(octree.root.block_ids)}')
-
-
-
-    # Load additional data
-    new_coordinates_list = [(2, 2, 0), (1, 1, 0), (-5, -5, 0)]
-    new_points, new_attributes, new_block_ids = tree_block_processing(new_coordinates_list)
-
-    print(f'first couple of rows of new_block_ids: {new_block_ids[:2]}')
-    # Add new block to the octree
-    octree.add_block(new_points, new_attributes, new_block_ids)
-    print("Octree updated with additional data")
-    print(f'now octree root block_ids are: {type(octree.root.block_ids)}')
-
-
-
-    octree.visualize_octree_nodes()
-
 
 def main3():
-    # Create dummy data
+    try:
+        from . import block_inserter
+    except ImportError:
+        import block_inserter
+# Create dummy data
     data = pd.DataFrame({
         'X': [20, -5, -20, 20, -5, -20, 20, -5, -20],
         'Y': [20, -5, -20, 20, -5, -20, 20, -5, -20],
@@ -888,7 +930,9 @@ def main3():
 
     print(f'first couple of rows of new_block_ids: {new_block_ids[:2]}')
     # Add new block to the octree
-    octree.add_block(new_points, new_attributes, new_block_ids)
+    #octree.add_block(new_points, new_attributes, new_block_ids)
+    block_inserter.add_block(octree, new_points, new_attributes, new_block_ids)
+
     print("Octree updated with additional data")
     print(f'now octree root block_ids are: {type(octree.root.block_ids)}')
 
@@ -899,32 +943,6 @@ def print_summary(data, name):
         print(f'{name} - shape: {data.shape}, dtype: {data.dtype}, size: {data.size}')
     elif isinstance(data, list):
         print(f'{name} - length: {len(data)}, element type: {type(data[0])}')
-
-
-
-
-def test():
-    # Load the initial data
-    coordinates_list = [(20, 20, 20), (-5, -5, 0), (-20, -20, -20)]
-    df = pd.DataFrame({
-        'X': [coord[0] for coord in coordinates_list],
-        'Y': [coord[1] for coord in coordinates_list],
-        'Z': [coord[2] for coord in coordinates_list],
-        'Tree Size': ['small', 'medium', 'large']
-    })
-
-    # Generate points, attributes, and block IDs with both functions
-    points1, attributes1, block_ids1 = tree_block_processing(coordinates_list)
-    points2, attributes2, block_ids2 = tree_block_processing_complex(df)
-
-    # Print summaries
-    print_summary(points1, 'Points from tree_block_processing')
-    print_summary(points2, 'Points from tree_block_processing_complex')
-    print_summary(attributes1, 'Attributes from tree_block_processing')
-    print_summary(attributes2, 'Attributes from tree_block_processing_complex')
-    print_summary(block_ids1, 'Block IDs from tree_block_processing')
-    print_summary(block_ids2, 'Block IDs from tree_block_processing_complex')
-
 
 
 if __name__ == "__main__":
