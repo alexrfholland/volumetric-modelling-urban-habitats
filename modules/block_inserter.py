@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Any
 import numpy as np
-
+import time
 try:
     from . import block_inserter
 except ImportError:
@@ -12,6 +12,16 @@ except ImportError:
 import random
 import warnings
 from tqdm import tqdm  # Importing the tqdm module for the progress bar
+
+
+def timing_decorator(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"Function {func.__name__} took {end - start:.2f} seconds to run.")
+        return result
+    return wrapper
 
 def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict], block_ids: List[int]) -> None:
     """
@@ -32,8 +42,7 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
     Returns:
         None
 
-    TODO: 
-        Optimize edge check by first checking if the block center lies near the Octree edge.
+    TODO: Optimize edge check by first checking if the block center lies near the Octree edge.
     """
 
     # Helper function to check if a point lies on the edge or outside the Octree bounds
@@ -64,15 +73,24 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
             # Append the point, attribute, resourcetype, and block_id to the found leaf node
             node.points = np.append(node.points, [point], axis=0)
             node.attributes.append(attribute)
+            
+            
+            # Append the block_id and resource types to the found node and all its ancestors
+            
+            #old way 
+            # TODO: make generic function ('ie. new way' work that swaps the blockID and nodetype. currently assumes blockID and resourve type
+            # lists for ancestral nodes are empty and does not remove the types first)
             node.block_ids.append(block_id)
             node.resource_types.append(attribute['type'])
-
-            # Append the block_id and resource types to the found node and all its ancestors
             octree.update_block_ids_and_resource_types(node, block_id, attribute['type'])
+
+            #new way - currently not working 
+            octree.update_ancestral_nodes(node, block_id, attribute['type'])
 
             node.split(octree.max_depth + 1)
 
 
+@timing_decorator
 def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource_type_to: str, amount: int, block_id: int, temperature: float) -> None:
     """
     Distribute changes across the Octree, changing a certain amount of resources from one type to another type.
@@ -124,8 +142,16 @@ def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource
     for zone, _ in sorted_zones:
         leaf_nodes = octree.get_leaves(zone[0], block_id=block_id, resource_type=resource_type_from)
         for leaf in leaf_nodes:
+            #old way 
             leaf.resource_types[0] = resource_type_to
+            octree.change_block_ids_and_resource_types(leaf, block_id_from = None, block_id_to=None, resource_type_from = resource_type_from, resource_type_to = resource_type_to)
+            
+            #new way 
+            # TODO: make generic function that works (ie. also swaps the attributes in the block inserter)
+            #octree.update_ancestral_nodes(leaf, resource_type_to)
+           
             changes_done += 1
+            
             if changes_done >= amount:
                 break
 

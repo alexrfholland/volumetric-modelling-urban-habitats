@@ -424,11 +424,85 @@ class CustomOctree:
         return min_corner, max_corner
 
 
+    #just add attributes rather than swap
     def update_block_ids_and_resource_types(self, node, block_id, resource_type):
         while node is not None:
             node.block_ids.append(block_id)
             node.resource_types.append(resource_type)
             node = node.parent
+    
+    def change_block_ids_and_resource_types(self, node, block_id_from=None, resource_type_from=None, block_id_to=None, resource_type_to=None):
+        while node is not None:
+            # If block_id_from is not None, remove it from the list
+            if block_id_from is not None and block_id_from in node.block_ids:
+                node.block_ids.remove(block_id_from)
+            # If resource_type_from is not None, remove it from the list
+            if resource_type_from is not None and resource_type_from in node.resource_types:
+                node.resource_types.remove(resource_type_from)
+            # If block_id_to is not None, append it to the list
+            if block_id_to is not None:
+                node.block_ids.append(block_id_to)
+            # If resource_type_to is not None, append it to the list
+            if resource_type_to is not None:
+                node.resource_types.append(resource_type_to)
+            # Go to the parent node
+            node = node.parent
+
+
+    #remove existing attributes and replace them
+    # TODO: generic function to remove existing attributes and replace them for leaf node updater not working
+    def update_ancestral_nodes(self, leaf_node: 'OctreeNode', block_id_to: Optional[int]=None, resource_type_to: Optional[str]=None) -> None:
+        """
+        Update the block IDs and resource types of all ancestral nodes of a leaf node.
+        The leaf node's block ID and resource type are updated to block_id_to and resource_type_to, respectively.
+        Then, for each ancestral node of the leaf node, the same update is applied.
+
+        Args:
+            leaf_node (Node): The leaf node from which the updates should start.
+            block_id_to (int, optional): The new block ID to be added to the leaf node and all its ancestral nodes.
+            resource_type_to (str, optional): The new resource type to be added to the leaf node and all its ancestral nodes.
+
+        Raises:
+            ValueError: If the initial block ID or resource type of the leaf node is not found where expected.
+
+        Returns:
+            None
+        """
+        block_id_from = leaf_node.block_ids[0] if leaf_node.block_ids else None
+        resource_type_from = leaf_node.resource_types[0] if leaf_node.resource_types else None
+
+        if block_id_from is not None:
+            if block_id_from not in leaf_node.block_ids:
+                raise ValueError(f"Block ID {block_id_from} not found in leaf node block IDs.")
+            leaf_node.block_ids.remove(block_id_from)
+            if block_id_to is not None:
+                leaf_node.block_ids.append(block_id_to)
+
+        if resource_type_from is not None:
+            if resource_type_from not in leaf_node.resource_types:
+                raise ValueError(f"Resource Type {resource_type_from} not found in leaf node resource types.")
+            leaf_node.resource_types.remove(resource_type_from)
+            if resource_type_to is not None:
+                leaf_node.resource_types.append(resource_type_to)
+
+        node = leaf_node.parent
+        while node is not None:
+            if block_id_from is not None and node.block_ids:
+                if block_id_from not in node.block_ids:
+                    raise ValueError(f"Block ID {block_id_from} not found in node block IDs.")
+                node.block_ids.remove(block_id_from)
+                if block_id_to is not None:
+                    node.block_ids.append(block_id_to)
+
+            if resource_type_from is not None and node.resource_types:
+                if resource_type_from not in node.resource_types:
+                    raise ValueError(f"Resource Type {resource_type_from} not found in node resource types.")
+                node.resource_types.remove(resource_type_from)
+                if resource_type_to is not None:
+                    node.resource_types.append(resource_type_to)
+
+            node = node.parent
+
 
     def get_siblings(self, thisNode):
         if thisNode.parent is None:
