@@ -14,6 +14,7 @@ import warnings
 from tqdm import tqdm  # Importing the tqdm module for the progress bar
 
 
+
 def timing_decorator(func):
     def wrapper(*args, **kwargs):
         start = time.time()
@@ -417,7 +418,7 @@ def distribute_changes3(octree: 'CustomOctree', resource_type_from: str, resourc
 
 #old working code
 @timing_decorator
-def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource_type_to: str, amount: int, block_id: int, temperature: float) -> None:
+def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource_type_to: str, amount: int, block_id: int, temperature: float, zones=None, zone_min_offset_level = 2) -> None:
     """
     Distribute changes across the Octree, changing a certain amount of resources from one type to another type.
 
@@ -442,11 +443,13 @@ def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource
 
     TODO: fix temperature parameter
     """
-    
     print(f'Searching for nodes with block id {block_id} and resource type {resource_type_from}')
     
     print("Step 1: Identifying zones of the block")
-    zones = octree.get_leaf_and_block_nodes(min_offset_level=2, max_offset_level=10, block_id=block_id)['single_block_nodes']
+
+    # if zones are not provided, compute them
+    if zones is None:
+        zones = octree.get_leaf_and_block_nodes(min_offset_level=zone_min_offset_level, max_offset_level=10, block_id=block_id)['single_block_nodes']    
 
     if not zones:
         warnings.warn(f"WARNING: No zones with block ID {block_id} and resource type {resource_type_from} were found. Moving on to the next block.")

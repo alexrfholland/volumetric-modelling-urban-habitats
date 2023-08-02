@@ -58,14 +58,13 @@ print(f"Created Octree with max depth {max_depth} and extents {octree.root.min_c
 print('adding blocks to octree')
 ground_points = lidar_dataframe.loc[lidar_dataframe['element_type'].isin([2, 4]), ['X', 'Y', 'Z']]
 treeAttributes = {}  # This should be the actual tree attributes
-octree, sizeList, blockList = blocks.generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttributes)
+octree = blocks.generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttributes)
 
-print(f'Add blocks with IDs {blockList} to octree')
 print("blocks added to octree")
 
 print("starting to change attributes")
 #3.2 Update tree block nodes in octree with additional attributes/resources from from the lerouxdata.csv
-octree = blocks.update_tree_attributes(octree, sizeList, blockList)
+octree = blocks.update_tree_attributes(octree)
 print("finished changing attributes")
 
 #4. Visualise octree

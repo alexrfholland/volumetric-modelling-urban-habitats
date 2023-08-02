@@ -14,6 +14,20 @@ from . import block_inserter
 from . import urbanforestparser as UrbanForestParser
 from . import block_info
 
+# Global block metadata dictionary
+block_metadata = {}
+
+def populate_block_metadata(block_id, _type, mid_point=None, size=None, control=None):
+    global block_metadata
+
+    # Populate the block metadata dictionary
+    # Note: You'll need to replace this with your actual logic for populating the metadata
+    block_metadata[block_id] = {
+        'mid_point': mid_point,
+        'size': size,
+        'control': control,
+        'type' : _type
+    }
 
 def generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttributes):
     """
@@ -36,15 +50,16 @@ def generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttribu
         octree.root.min_corner, octree.root.max_corner, ground_points)
 
     # Step 2: Generate tree blocks relevant to the size, location, and type of each tree
-    tree_points, tree_attributes, tree_block_ids, sizeList, blockList = block_info.generate_tree_blocks(treeAttributes)
+    tree_points, tree_attributes, tree_block_ids, sizeList, blockList = block_info.generate_tree_blocks(treeAttributes, populate_block_metadata)
 
     # Step 3: Add tree blocks to the octree
     block_inserter.add_block(octree, tree_points, tree_attributes, tree_block_ids)
-    
-    return octree, sizeList, blockList
 
-def update_tree_attributes(octree, sizeList, blockList):
+    print(f'Add blocks with IDs {blockList} to octree')
 
+    return octree
+
+def update_tree_attributes(octree):
 
     """
     This function updates the tree block nodes in the octree with additional attributes.
@@ -57,16 +72,17 @@ def update_tree_attributes(octree, sizeList, blockList):
     octree (CustomOctree): The updated octree object.
     """
 
-    print(f'range of blocklist is {range(len(blockList))}')
+    # Extract all block ids where type is 'tree'
+    tree_block_ids = [block_id for block_id, metadata in block_metadata.items() if metadata['type'] == 'tree']
+
     # For each block in the octree
-    for i in range(len(blockList)):
+    for id in tree_block_ids:
         # Calculate the number of nodes to update
         #resourceStats = block_info.calculate_leaf_nodes(sizeList[i], 'minimal')
-        resourceStats = block_info.calculate_leaf_nodes(sizeList[i], 'maximum')
-        print(f'{i}: stats for block {blockList[i]} of size {sizeList[i]} are {resourceStats}')
+        resourceStats = block_info.calculate_leaf_nodes(block_metadata[id]['size'], block_metadata[id]['control'])
+        print(f"stats for block {id} of size {block_metadata[id]['size']} and control {block_metadata[id]['control']} are {resourceStats}")
 
         # Distribute the changes in the octree
-        #block_inserter.distribute_changes(octree, blockList[i], 1, resourceStats)
-        block_inserter.distribute_changes_across_resources(octree, resourceStats, blockList[i], 1)
+        block_inserter.distribute_changes_across_resources(octree, resourceStats, id, 1)
 
     return octree

@@ -3,7 +3,7 @@ import numpy as np
 import random
 
 
-def generate_tree_blocks(df):
+def generate_tree_blocks(df, populate_block_metadata):
     """
     This function generates a tree block based on the input DataFrame.
 
@@ -65,11 +65,14 @@ def generate_tree_blocks(df):
 
         # Process block data for each tree
         for tree_id, row in zip(tree_ids, tree_size_data.iterrows()):
+            print(f"row for tree block {tree_block_count} of size {tree_size} is {row} with coordiante {(row[1]['X'], row[1]['Y'], row[1]['Z'])}")
             processed_block_data, tree_block_count = load_and_translate_tree_block_data(data, tree_id, (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size, tree_block_count)
             processed_data.append(processed_block_data)
             blockList.append(tree_block_count)
             sizeList.append(tree_size)
             print(f'processed_block_data for tree with block_id {tree_block_count} and size {tree_size}')
+
+            populate_block_metadata(tree_block_count, 'tree', (row[1]['X'], row[1]['Y'], row[1]['Z']), tree_size, 'minimal')
 
     # Combine the block data
     combined_data = pd.concat(processed_data)
@@ -80,6 +83,8 @@ def generate_tree_blocks(df):
     points = combined_data[['x', 'y', 'z']].to_numpy()
     attributes = define_attributes(combined_data)
     block_ids = combined_data['BlockID'].tolist()
+
+    
 
     print(f'sizeList is: {sizeList}, blockList is: {blockList}')
 
