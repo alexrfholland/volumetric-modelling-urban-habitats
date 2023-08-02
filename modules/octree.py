@@ -307,6 +307,22 @@ class OctreeNode:
                 'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
             }
 
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
+                'peeling bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'dead branches': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
+
+                # Vivid colors
+                'hollows': (1, 0, 1),  # Vivid pink
+                'epiphytes': (0, 1, 1),  # Vivid cyan
+
+                #ground
+                'fallen_logs' :  (0.8, 0.4, 0), #Darker Orange
+                'litter_cover' : (0.7, 0.7, 0.7),  # Lighter gray
+                    }
+
             # Get the color corresponding to the dominant attribute
             dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # default color is black
 
@@ -604,104 +620,62 @@ class CustomOctree:
 
         return leaf_nodes
     
-        
-    #this isnt working
-    def find_lowest_common_ancestor_of_block(self, node: 'OctreeNode', block_id: int) -> 'OctreeNode':
+    def find_lowest_common_ancestor_of_block(self, block_id: int, node: Optional['OctreeNode'] = None) -> Optional['OctreeNode']:
         """
-        this isnt working...
-        Find the lowest common ancestor of all leaf nodes that contain a certain block within an Octree.
+        Find the Lowest Common Ancestor (LCA) of all leaf nodes that contain a certain block within an Octree.
 
-        The LCA in this context is the highest node (closest to the root) that encompasses all leaves of a certain
-        block_id, and no other block_id can be found among its descendants.
+        The LCA in this context is the highest node (closest to the root) that contains the block_id, 
+        has no siblings that contain the block_id, and has multiple children that contain the block_id.
 
         Args:
-            node (OctreeNode): The OctreeNode to start the search from.
-            block_id (int): The ID of the block to find the local root for.
+            block_id (int): The ID of the block to find the LCA for.
+            node (OctreeNode, optional): The OctreeNode to start the search from. Defaults to the root of the octree.
 
         Returns:
-            OctreeNode: The local root of the block, i.e., the lowest common ancestor of all leaves containing the block_id.
+            OctreeNode: The LCA of the block, i.e., the highest node that contains the block_id, 
+                        has no siblings that contain the block_id, 
+                        and has multiple children that contain the block_id.
+                        If no such node exists, returns None.
         """
-        if block_id in node.block_ids:  # If the current node is part of the block
-            # Check if any of the children of the current node are also part of the block
-            child_contain_block = [block_id in child.block_ids for child in node.children]
-            if any(child_contain_block):
-                # If so, recursively search for the local root starting from the child that contains the block
-                for i, contains in enumerate(child_contain_block):
-                    if contains:
-                        return self.find_lowest_common_ancestor_of_block(node.children[i], block_id)
-            else:
-                # If none of the children are part of the block, the current node is the local root
-                block_ids_counts = Counter(node.block_ids)
-                print(f"Found local root at depth {node.depth} for block_id {block_id}.")
-                print(f"Block IDs of this root: {node.block_ids}")
-                print(f"Block IDs at the local root: {set(block_ids_counts.keys())}")
-                print(f"Block IDs frequencies: {block_ids_counts}")
+        if node is None:
+            node = self.root  # Start from the root if no starting node is provided
+
+        print(f'Checking node at depth {node.depth}')  # Log message
+        # Check if the current node contains the block
+        if block_id in node.block_ids:
+            print(f'Node at depth {node.depth} contains block {block_id}')  # Log message
+
+            # Check the siblings of the current node
+            if node.parent is not None:
+                for sibling in node.parent.children:
+                    # If a sibling node contains the block, return None
+                    if sibling is not node and block_id in sibling.block_ids:
+                        print(f'Sibling of node at depth {node.depth} contains block {block_id}')  # Log message
+                        return None
+            
+            # Check each child node
+            child_counter = 0
+            lca_child = None
+            for child in node.children:
+                # If a child node contains the block, recursively call this method on the child
+                if block_id in child.block_ids:
+                    child_counter += 1
+                    lca_child = self.find_lowest_common_ancestor_of_block(block_id, child)
+            
+            # If multiple child nodes contain the block, the current node is the LCA
+            if child_counter > 1:
+                print(f'Node at depth {node.depth} is the LCA')  # Log message
                 return node
+            else:  # If only one child node or none contain the block, return the LCA found in the child subtree
+                print(f'Found LCA in child of node at depth {node.depth}')  # Log message
+                return lca_child
+
+        # If the current node doesn't contain the block, return None
         else:
-            print(f"No local root found for block_id {block_id} in octree node with block ids of {node.block_ids}.")
-            # If the current node is not part of the block, return None
+            print(f'Node at depth {node.depth} does not contain block {block_id}')  # Log message
             return None
 
 
-    def add_block(self, 
-                points: np.ndarray, 
-                attributes: List[dict], 
-                block_ids: List[int]) -> None:
-        """
-        Add a block of points to the Octree.
-
-        Each block is a collection of points and their associated attributes. Blocks might be spread over multiple nodes in the octree.
-        Each point is represented by a tuple (x, y, z) and has a set of attributes (e.g., RGB, intensity, etc.) represented as a dictionary.
-        Each point also has a block_id that represents which block this point belongs to.
-
-        Args:
-            points (np.ndarray): A numpy array containing the 3D coordinates of the points.
-            attributes (List[dict]): A list of dictionaries, each representing the attributes of a corresponding point.
-            block_ids (List[int]): A list of block IDs, each corresponding to a point.
-
-        Returns:
-            None
-        """
-        # Print the type of points, attributes and block_ids
-        print(f'summary stats of points, attributes and block_ids: {np.shape(points)}, {np.shape(attributes)}, {np.shape(block_ids)}')
-        print(f'type of points, attributes and block_ids: {type(points)}, {type(attributes)}, {type(block_ids)}')
-
-        #summary stats of points, attributes and block_ids: (127812, 3), (127812,), (127812,)
-        #input data for these looks like: 
-        # [-21.07499694   2.50499726   6.1621579 ] 
-        # {'Rf': 0.317647, 'Bf': 0.298039, 'Gf': 0.309804, 'B': 115.0, 'Composite': 130.666672, 'Dip (degrees)': 79.078636, 'Dip direction (degrees)': 87.14801, 'G': 201.0, 'Illuminance (PCV)': 0.766949, 'Nx': 0.980672, 'Ny': 0.048855, 'Nz': 0.189462, 'R': 76.0, 'element_type': 0.0, 'horizontality': 1} 
-        # 1
-        def update_block_ids(node, block_id):
-            while node is not None:
-                node.block_ids.append(block_id)
-                node = node.parent
-
-        for point, attribute, block_id in zip(points, attributes, block_ids):
-            # Find the appropriate node to insert this point into
-            node, quadrant = self.find_node_for_point(point)
-
-            # If the point is not within any existing child node, create a new one
-            if node is self.root or quadrant is not None:
-                min_corner, max_corner = node.calculate_bounds_for_point(point)
-                #child = OctreeNode(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
-                child = self.create_child_node(min_corner, max_corner, np.array([point]), [attribute], [block_id], node.depth + 1)
-                node.children.append(child)
-                child.parent = node
-                # Append the block_id to the current node and all its ancestors
-                update_block_ids(node, block_id)
-
-                child.split(self.max_depth + 1)
-
-            else:
-                # Append the point, attribute, and block_id to the found leaf node
-                node.points = np.append(node.points, [point], axis=0)
-                node.attributes.append(attribute)
-                node.block_ids.append(block_id)
-                
-                # Append the block_id to the found node and all its ancestors
-                update_block_ids(node, block_id)
-
-                node.split(self.max_depth + 1)
             
     def find_node_for_point(self, point):
         epsilon = 1e-9  # A small tolerance value

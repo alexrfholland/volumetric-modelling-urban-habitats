@@ -113,8 +113,7 @@ tree_blocks_df = pd.DataFrame(tree_blocks_dict)
 # Pivot DataFrame
 pivot_df = tree_blocks_df.pivot(index='size', columns='control_level', values='tree_block')
 
-
-
+df_attributes = pd.read_csv('./data/lerouxdata.csv')  # assuming you have this DataFrame
 
 import open3d as o3d
 import numpy as np
