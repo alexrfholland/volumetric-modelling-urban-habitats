@@ -32,7 +32,7 @@ file_path = 'data/sites/park.parquet'
 
 # Convert the LiDAR data to a Pandas DataFrame ready for insertion into the Octree
 # Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
-lidar_dataframe = ConvertSites.process_lidar_data(file_path)
+lidar_dataframe = ConvertSites.process_lidar_data(file_path, blocks.populate_block_metadata)
 blockId_index = lidar_dataframe.columns.get_loc('blockID')
 attribute_cols = lidar_dataframe.columns[blockId_index+1:]
 

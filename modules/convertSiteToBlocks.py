@@ -56,12 +56,15 @@ def assign_horizontality(dip_degrees):
     horizontality[dip_degrees >= 85] = 2  # vertical
     return horizontality
 
-def create_category_mapping(data, queries):
+def create_category_mapping(data, queries, populate_block_metadata):
     category = np.full(len(data), -1, dtype=int)  # default to -1
-    for i, query in enumerate(queries):
+    for i, (query, label) in enumerate(queries.items()):
         filtered_indices = data.query(query).index
         category[filtered_indices] = i + 1
+
+        populate_block_metadata(i+1, label)
     return category
+
 
 def get_and_shuffle_colors(cm, queries, colormap_name):
     category_colors = cm.get_categorical_colors(len(queries) + 1, colormap_name)
@@ -83,7 +86,7 @@ def convert_to_point_cloud(data, colors):
     pcd.colors = o3d.utility.Vector3dVector(colors)
     return pcd
 
-def process_lidar_data(filepath, colormap_name='lajollaS'):
+def process_lidar_data(filepath, populate_block_metadata, colormap_name='lajollaS'):
     """
     Returns a dataframe with the columns being X,Y,Z,blockID,r,g,b,B,Bf,Composite,Dip (degrees),Dip direction (degrees),G,Gf,Illuminance (PCV),Nx,Ny,Nz,R,Rf,element_type,horizontality
     with one per column. Rows are the points.
@@ -115,10 +118,23 @@ def process_lidar_data(filepath, colormap_name='lajollaS'):
         "element_type == 4" #block id = 7, impermeable ground
     ]
 
+        # Queries
+    queries = {
+        #"element_type == 0", #block id = 1, trees
+        "element_type == 1 and horizontality == 0" : 'roof flat', #block id = 2, buildings, roof flat
+        "element_type == 1 and horizontality == 1" : 'roof angle', #block id = 3 buildings, roof angle
+        "element_type == 1 and horizontality == 2" : ' wall', #block id = 4, buildings, wall (vertical)
+        "element_type == 2" : 'grass', #block id = 5, grass
+        "element_type == 3" : 'street furniture', #block id = 6, street furniture
+        "element_type == 4" : 'impermeable ground' #block id = 7, impermeable ground
+        }
 
-    
+
+
+    catagories = create_category_mapping(data, queries, populate_block_metadata)
+    print(f'catagories are {catagories}')
     # Create category mapping
-    data['blockID'] = create_category_mapping(data, queries)
+    data['blockID'] = catagories
     
     # Filter out uncategorized points
     data = data[data['blockID'] != -1]

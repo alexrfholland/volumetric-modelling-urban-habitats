@@ -24,6 +24,10 @@ def timing_decorator(func):
         return result
     return wrapper
 
+# Helper function to check if a point lies on the edge or outside the Octree bounds
+def is_outside_or_on_edge(point: np.ndarray, min_corner: np.ndarray, max_corner: np.ndarray) -> bool:
+    return np.any(point <= min_corner) or np.any(point >= max_corner)
+    
 def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict], block_ids: List[int]) -> None:
     """
     Add a block of points to the Octree.
@@ -46,9 +50,7 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
     TODO: Optimize edge check by first checking if the block center lies near the Octree edge.
     """
 
-    # Helper function to check if a point lies on the edge or outside the Octree bounds
-    def is_outside_or_on_edge(point: np.ndarray, min_corner: np.ndarray, max_corner: np.ndarray) -> bool:
-        return np.any(point <= min_corner) or np.any(point >= max_corner)
+
 
     for point, attribute, block_id in zip(points, attributes, block_ids):
         # Check if the point lies on the edge or outside the Octree bounds
@@ -57,6 +59,8 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
 
         # Find the appropriate node to insert this point into
         node, quadrant = octree.find_node_for_point(point)
+
+
 
         # If the point is not within any existing child node, create a new one
         if node is octree.root or quadrant is not None:
@@ -67,6 +71,11 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
 
             # Append the block_id  and resource types to the current node and all its ancestors
             octree.update_block_ids_and_resource_types(node, block_id, attribute['type'])
+            
+            if attribute['type'] == 'fallen logs':
+                print(f'fallen logs added to node {node} with block id {block_id} to child with resource type {child.resource_types}')
+
+    
 
             child.split(octree.max_depth + 1)
 
@@ -87,6 +96,9 @@ def add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict]
 
             #new way - currently not working 
             octree.update_ancestral_nodes(node, block_id, attribute['type'])
+
+            if attribute['type'] == 'fallen logs':
+                print(f'fallen logs added to node {node} with block id {block_id} and resource type {node.resource_types}')
 
             node.split(octree.max_depth + 1)
 
@@ -490,7 +502,7 @@ def distribute_changes(octree: 'CustomOctree', resource_type_from: str, resource
     else:
         print(f"{changes_done} nodes converted to {resource_type_to}. All planned changes were successfully done for Block ID {block_id}")
 
-def distribute_changes_across_resources(octree: 'CustomOctree', df: pd.DataFrame, block_id: int, temperature: float) -> None:
+def distribute_changes_across_resources(octree: 'CustomOctree', df: pd.DataFrame, block_id: int, temperature: float, block_metadata: dict) -> None:
     """
     Distribute changes across the Octree, iterating through each resource in a DataFrame.
 
@@ -502,6 +514,7 @@ def distribute_changes_across_resources(octree: 'CustomOctree', df: pd.DataFrame
         df (pd.DataFrame): A DataFrame containing the changes to be distributed.
         block_id (int): The block ID to restrict the changes to.
         temperature (float): The temperature parameter controlling randomness. 
+        blockmetadata (dict)
 
     Returns:
         None
@@ -511,7 +524,7 @@ def distribute_changes_across_resources(octree: 'CustomOctree', df: pd.DataFrame
     for index, row in df.iterrows():
         resource_type_from = 'isNeither'
         resource_type_to = row['Attribute']
-        percentage = row['Leaf Nodes (Random)']
+        tableValue = row['Leaf Nodes (Random)']
 
         # Check if the resource is 'dead branches' or 'peeling bark'
         if resource_type_to in ['dead branches', 'peeling bark']:
@@ -519,14 +532,142 @@ def distribute_changes_across_resources(octree: 'CustomOctree', df: pd.DataFrame
             total_leaf_nodes = octree.root.block_ids.count(block_id)
             
             # Calculate the number of leaf nodes to convert
-            amount = round(total_leaf_nodes * percentage)
-            print(f'for block {block_id} there should be {amount} leaf nodes that are {resource_type_to}, or {percentage} * {total_leaf_nodes} leaf nodes')
+            amount = round(total_leaf_nodes * tableValue)
+            print(f'for block {block_id} there should be {amount} leaf nodes that are {resource_type_to}, or {tableValue} * {total_leaf_nodes} leaf nodes')
             distribute_changes(octree, resource_type_from, resource_type_to, amount, block_id, temperature)
         elif resource_type_to in ['hollows', 'epiphytes']:
             if(amount > 0):
                 # Use the values directly from 'Leaf Nodes (Random)'
                 amount = row['Leaf Nodes (Random)']
                 distribute_to_higher_elevation_nodes(octree, resource_type_from, resource_type_to, amount, block_id)
+
+        # Get the block id with the desired type
+        desired_type = 'grass'
+        block_id_with_desired_type = []
+        for block_id_in_list, metadata in block_metadata.items():
+            if metadata['type'] == desired_type:
+                block_id_with_desired_type.append(block_id_in_list)
+                break
+
+                # Get the block id with the desired type
+        desired_type = 'impermeable ground'
+        for block_id_in_list, metadata in block_metadata.items():
+            if metadata['type'] == desired_type:
+                block_id_with_desired_type.append(block_id_in_list)
+                break
+
+        
+
+        if resource_type_to == 'fallen logs':
+            print(f'{desired_type} has block id {block_id_with_desired_type}')
+            
+            # find number of fallen logs to insert into tree block
+            # chose a random start point at the same z coordinate as TreePos and between 0 and 10 meters away
+            # get a random angle and a random length value between a min and max length (ie. 0.5 to 3m)
+            # draw a line between them and create a list of points that are 0.2m along the line
+            # use the function octree.find_leaf_node(self, node: 'OctreeNode', block_id: int, node_types: List[str]) -> 'OctreeNode' to get the closest ground node to each point (use block id of 2 as it is ground)
+            # check if the distance between the treePos and the ground node is less than 10m. if not, discard the point.
+            # if it is, change the z location of the point to the z cordinate of the node + 0.2.
+            # create a corrosponding list of dictionaries called 'attributes', one per point, and add the value 'fallen log' with the key 'type'.
+            #create a list of blockids, one per point, all repeating the block_id value
+            #call add_block(octree: 'CustomOctree', points: np.ndarray, attributes: List[dict], block_ids: List[int]) -> None to insert the points into the octree
+
+            print(f'block metadata is {block_metadata}')
+            treePos = block_metadata[block_id]['location']
+            num_logs = round(tableValue)  # Number of fallen logs to insert
+
+            #break out of if statement if num_logs == 0
+            if num_logs == 0:
+                print(f'{num_logs} to add for tree {block_id}, skipping')
+                continue
+
+            print(f"adding {num_logs} {resource_type_to} to {block_metadata[block_id]['size']}, {block_metadata[block_id]['control']} tree {block_id} at position {treePos}")
+
+            for _ in range(num_logs):
+                # Get random start point, angle, and length
+                start_point = treePos[0] + random.uniform(0, 10), treePos[1] + random.uniform(0, 10), treePos[2]
+                angle = random.uniform(0, 2 * np.pi)
+                length = random.uniform(0.5, 3)
+
+                # Generate points along the line
+                points = [(start_point[0] + length * np.cos(angle) * t, start_point[1] + length * np.sin(angle) * t, start_point[2]) for t in np.arange(0, 1, 0.2)]
+
+                # Get closest ground nodes and check distance
+                new_points = []
+                attributes = []
+                block_ids = []
+                for point in points:
+                    node, distance = octree.find_closest_leaf_node(treePos, block_id_with_desired_type, return_distance = True) #Find closest grass ground node                    
+                    if node is not None:
+                        if distance < 10:
+                            new_points.append((point[0], point[1], node.max_corner[2] + octree.compute_node_size(node.depth)/2))  # Change z-coordinate
+                            # Create corresponding attributes and block IDs
+                            attributes.append({'type': resource_type_to})
+                            block_ids.append(block_id)
+                        else:
+                            print(f'{resource_type_to} point {point} is too far from the ground node at {node.center} with distance {distance} and will not be added to the octree')
+                    else:
+                        print(f'no node could be found for {resource_type_to} point')
+                           
+
+                # Insert points into octree
+                add_block(octree, np.array(new_points), attributes, block_ids)
+                print(f'added {len(new_points)} fallen logs to block {block_id} at positions {new_points}')
+
+            
+        elif resource_type_to == 'leaf litter':
+            treePos = block_metadata[block_id]['location']
+            radius = 10  # 10m radius
+            percentage_leaf_litter = tableValue  # % leaf litter
+
+
+            # Calculate how many points there would be in a 1m x 1m grid in that area
+            area = np.pi * (radius**2)
+            grid_points = area  # 1m x 1m grid
+
+            # Find the number of leaf litter points
+            num_points = round(grid_points * percentage_leaf_litter)
+            
+            if num_points == 0:
+                print(f'{num_points} to add for tree {block_id}, skipping')
+                continue
+
+            print(f"Adding {num_points} {resource_type_to} to {block_metadata[block_id]['size']}, {block_metadata[block_id]['control']} tree {block_id} at position {treePos}")
+
+            # Randomly create those points at the cell locations
+            points = []
+            for _ in range(num_points):
+                x = treePos[0] + random.uniform(-radius, radius)
+                y = treePos[1] + random.uniform(-radius, radius)
+                node, distance = octree.find_closest_leaf_node((x, y, treePos[2]), block_id_with_desired_type, return_distance = True)
+                
+                if node is not None:
+                    if distance < radius:
+                        z = node.max_corner[2] + octree.compute_node_size(node.depth)/2
+                        points.append((x, y, z))
+                    else:
+                        print(f'{resource_type_to} point ({x}, {y}, {z}) is too far from the ground node at {node.center} with distance {distance} and will not be added to the octree')
+                else:
+                    print(f'no node could be found for {resource_type_to} point')
+
+            # Create a list of attributes that are key-value pairs with the key being 'type' and the value being 'leaf litter'
+            attributes = [{'type': resource_type_to} for _ in range(len(points))]
+            
+            # Create a list of block IDs, which is just the block ID value repeated for each point
+            block_ids = [block_id for _ in range(len(points))]
+
+            # With these 3 lists (list of points, list of attributes, list of block IDs), call add_block
+            add_block(octree, np.array(points), attributes, block_ids)
+            print(f'Added {len(points)} {resource_type_to} to block {block_id} at positions {points}')
+
+            
+
+
+                
+
+
+
+
 
 
 def distribute_to_higher_elevation_nodes(octree: 'CustomOctree', resource_type_from: str, resource_type_to: str, amount: int, block_id: int) -> None:
@@ -546,24 +687,34 @@ def distribute_to_higher_elevation_nodes(octree: 'CustomOctree', resource_type_f
     # Get all leaf nodes in the block with the specified resource type
     leaf_nodes = octree.get_leaves(octree.root, block_id=block_id, resource_type=resource_type_from)
 
+    if not leaf_nodes:
+        print(f"No leaf nodes with block ID {block_id} and resource type {resource_type_from} were found. Moving on to the next resource.")
+        return
+
     # Sort the leaf nodes by elevation in descending order
     sorted_leaf_nodes = sorted(leaf_nodes, key=lambda node: node.points[0][2], reverse=True)
-    print(sorted_leaf_nodes)
+    print(f'sorted leaf nodes are {sorted_leaf_nodes}')
 
 
     # Calculate the index that represents the top 10% of nodes
     top_10_percent_index = len(sorted_leaf_nodes) * 0.1
 
     top_10_percent_index = int(top_10_percent_index)
-    print(top_10_percent_index)
+    print(f'top 10% index is {top_10_percent_index}')
 
     
 
-    # Select the top 10% of nodes
-    top_10_percent_nodes = sorted_leaf_nodes[:top_10_percent_index]
+    if len(sorted_leaf_nodes) <= amount:
+        selected_nodes = sorted_leaf_nodes
+    else:
+        # Select the top 10% of nodes
+        top_10_percent_nodes = sorted_leaf_nodes[:top_10_percent_index]
 
-    # Randomly select 'amount' nodes from the top 10%
-    selected_nodes = random.sample(top_10_percent_nodes, int(amount))
+        if len(top_10_percent_nodes) <= amount:
+            selected_nodes = top_10_percent_nodes
+        else:
+            # Randomly select 'amount' nodes from the top 10%
+            selected_nodes = random.sample(top_10_percent_nodes, int(amount))
 
     # Change the resource type of the selected nodes
     for node in selected_nodes:

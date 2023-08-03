@@ -6,6 +6,28 @@ df = pd.read_csv('data/branchPredictions - full.csv')
 
 # conditions to categorize branches
 conditions = [
+    (df['Branch.type'] == 'dead')
+]
+
+# corresponding categories
+categories = ['dead branch']
+
+# Define a new column 'type' based on existing columns
+df['type'] = np.select(conditions, categories, default='branch')
+
+# Drop unnecessary columns
+df = df.drop(['isNeither', 'isLateralOnly', 'isDeadOnly', 'isBoth'], axis=1)
+
+# Save the modified DataFrame back to a CSV file
+df.to_csv('data/branchPredictions - adjusted.csv', index=False)
+
+
+
+"""# Load the CSV data into a DataFrame
+df = pd.read_csv('data/branchPredictions - full.csv')
+
+# conditions to categorize branches
+conditions = [
     (df['Branch.type'] == 'dead') & (df['Branch.angle'] > 20),
     (df['Branch.type'] != 'dead') & (df['Branch.angle'] <= 20),
     (df['Branch.type'] == 'dead') & (df['Branch.angle'] <= 20),
@@ -22,3 +44,4 @@ df = df.drop(['isNeither', 'isLateralOnly', 'isDeadOnly', 'isBoth'], axis=1)
 
 # Save the modified DataFrame back to a CSV file
 df.to_csv('data/edited_branchPredictions - adjusted.csv', index=False)
+"""

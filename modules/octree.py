@@ -205,6 +205,21 @@ class OctreeNode:
         #print(f'type of min_corner, max_corner, points, attributes, block_ids, depth: {type(min_corner)}, {type(max_corner)}, {type(points)}, {type(attributes)}, {type(block_ids)}, {type(depth)}')
         #print(f'first few values of min_corner, max_corner, points, attributes, block_ids, depth: {min_corner[0]}, {max_corner[0]}, {points[0]}, {attributes[0]}, {block_ids[0]}, {depth}')
 
+    def distance_to_point(self, point):
+        """
+        Calculate the Euclidean distance from the center of the node's bounding box to a point.
+
+        Args:
+            point (tuple): The point to calculate the distance to.
+
+        Returns:
+            float: The Euclidean distance to the point.
+        """
+        center = ((self.min_corner[0] + self.max_corner[0]) / 2,
+                  (self.min_corner[1] + self.max_corner[1]) / 2,
+                  (self.min_corner[2] + self.max_corner[2]) / 2)
+        return np.sqrt((center[0] - point[0]) ** 2 + (center[1] - point[1]) ** 2 + (center[2] - point[2]) ** 2)
+    
     def get_geos(self):
         center = (self.min_corner + self.max_corner) / 2
         extent = self.max_corner - self.min_corner
@@ -251,13 +266,57 @@ class OctreeNode:
         return new_min, new_max
 
 
-        
+    def contains_point(self, point):
+        """
+        Check if a point is inside the node's bounding box.
+
+        Args:
+            point (tuple): The point to check.
+
+        Returns:
+            bool: True if the point is inside the bounding box, False otherwise.
+        """
+        return self.min_corner[0] <= point[0] <= self.max_corner[0] and \
+               self.min_corner[1] <= point[1] <= self.max_corner[1] and \
+               self.min_corner[2] <= point[2] <= self.max_corner[2]    
+    
     def get_colors(self):
 
         attribute_columns = ['Rf', 'Gf', 'Bf']
 
+        if self.resource_types:
+            # Get the type from the attributes list
+            print(self.resource_types)
+            dominant_attribute = self.resource_types[0]
+
+            if self.resource_types[0] == 'fallen logs':
+                print(f'fallen logs coloured')
+
+
+            attribute_color_map = {
+                'isNeither': (0.8, 0.8, 0.8),  # Light gray
+                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
+                'peeling bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
+                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'dead branches': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
+
+                # Vivid colors
+                'hollows': (1, 0, 1),  # Vivid pink
+                'epiphytes': (0, 1, 1),  # Vivid cyan
+
+                #ground
+                'fallen logs' :  (1.0, 0.5, 0.0), #Vivid Orange
+                'leaf litter' : (0.7, 0.7, 0.7),  # Lighter gray
+                    }
+
+            # Get the color corresponding to the dominant attribute
+            dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # default color is black
+
+            return dominant_attribute, dominant_color, dominant_color
+    
+
         # Check if 'Rf', 'Gf', 'Bf' exist in the first dictionary of the attributes list
-        if all(column in self.attributes[0] for column in attribute_columns):
+        elif all(column in self.attributes[0] for column in attribute_columns):
             # Take the first color from the attributes list
             dominant_color = [self.attributes[0][col] for col in attribute_columns]
 
@@ -295,41 +354,11 @@ class OctreeNode:
 
             return dominant_attribute, dominant_color, dominant_color
         
-        elif self.resource_types is not None:
-            # Get the type from the attributes list
-            dominant_attribute = self.resource_types[0]
-
-            # Define color mapping
-            attribute_color_map = {
-                'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.267004, 0.004874, 0.329415),  #  Moderate intensity, deep purple
-                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
-                'isBoth': (0.993248, 0.906157, 0.143936)  # High intensity, bright yellow
-            }
-
-            attribute_color_map = {
-                'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
-                'peeling bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
-                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
-                'dead branches': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
-
-                # Vivid colors
-                'hollows': (1, 0, 1),  # Vivid pink
-                'epiphytes': (0, 1, 1),  # Vivid cyan
-
-                #ground
-                'fallen_logs' :  (0.8, 0.4, 0), #Darker Orange
-                'litter_cover' : (0.7, 0.7, 0.7),  # Lighter gray
-                    }
-
-            # Get the color corresponding to the dominant attribute
-            dominant_color = attribute_color_map.get(dominant_attribute, (0, 0, 0))  # default color is black
-
-            return dominant_attribute, dominant_color, dominant_color
+    
 
 
         else:
+            print (f'node has no attributes')
             return 'No Attributes', (0, 0, 0), (0, 0, 0)
 
     #a more complex version of 'get_colours', where the attribute list of dictionaries is converted into a pandas dataframe so we can find the most common attribute
@@ -438,6 +467,63 @@ class CustomOctree:
         max_corner += length - (max_corner - min_corner)
 
         return min_corner, max_corner
+    
+    def find_closest_leaf_node(self, point, block_ids=None, node=None, return_distance=False):
+        """
+        Find the closest leaf node to a given point.
+
+        If block IDs are provided, the function will return the closest leaf node of those types.
+
+        Args:
+            point (tuple): The point to find the closest leaf node to.
+            block_ids (list, optional): The block IDs to restrict the search to.
+            node (OctreeNode, optional): The node to start the search from. Defaults to the root node.
+            return_distance (bool, optional): Whether to return the distance to the closest leaf node.
+
+        Returns:
+            OctreeNode, float: The closest leaf node to the point and its distance to the point (if return_distance is True).
+        """
+        # Default to the root node
+        if node is None:
+            node = self.root
+
+        # If this is a leaf node
+        if len(node.children) == 0:
+            # If no block ID is provided, or if this node has the correct block ID
+            if block_ids is None or any(block_id in node.block_ids for block_id in block_ids):
+                if return_distance:
+                    distance = node.distance_to_point(point)
+                    print(f"Returning leaf node at {node.center} with distance {distance}")
+                    return node, distance
+                else:
+                    print(f"Returning leaf node at {node.center}")
+                    return node
+
+        # If this is not a leaf node
+        else:
+            # Filter the children by block ID
+            if block_ids is not None:
+                children = [child for child in node.children if any(block_id in child.block_ids for block_id in block_ids)]
+            else:
+                children = node.children
+
+            # Sort the children by their distance to the point
+            sorted_children = sorted(children, key=lambda child: child.distance_to_point(point))
+
+            # Iterate over the sorted children
+            for child in sorted_children:
+                # Recursively search this subtree
+                result = self.find_closest_leaf_node(point, block_ids, child, return_distance)
+
+                # If a result was found, return it
+                if result is not None:
+                    return result
+
+        # If no result was found
+        print(f"No result found in node {node}")
+        return None
+
+
 
 
     #just add attributes rather than swap
@@ -527,7 +613,7 @@ class CustomOctree:
         return siblings
 
     #find one leaf node of this type [old, consider deleting]
-    def find_leaf_node(self, node: 'OctreeNode', block_id: int, node_types: List[str]) -> 'OctreeNode':
+    def find_leaf_nodeB(self, node: 'OctreeNode', block_id: int, node_types: List[str]) -> 'OctreeNode':
         """
         Find a leaf node of an OctreeNode with a specified block_id and one of the specified node types.
 
@@ -549,6 +635,31 @@ class CustomOctree:
             if found_node is not None:
                 return found_node
 
+        return None
+    
+    def find_leaf_node(self, node: 'OctreeNode', block_id: int) -> 'OctreeNode':
+        """
+        Find a leaf node of an OctreeNode with a specified block_id and one of the specified node types.
+
+        Args:
+            node (OctreeNode): The OctreeNode to start the search from.
+            block_id (int): The ID of the block to restrict the search to.
+
+        Returns:
+            OctreeNode: A leaf node that fits the criteria, or None if none is found.
+        """
+        if block_id in node.block_ids and not node.children:
+            return node
+
+        random.shuffle(node.children)  # shuffle the children to ensure random selection
+
+        for child in node.children:
+            found_node = self.find_leaf_node(child, block_id)
+            if found_node is not None:
+                print(f'found leaf node at point {found_node.points[0]}')
+                return found_node
+
+        print(f'no node found')
         return None
     
     #With this implementation, the method may return more than count nodes if count is reached within a group of siblings, but it will stop looking for more nodes once count is reached.
@@ -584,8 +695,9 @@ class CustomOctree:
 
         return leaf_nodes
     
+    
     #with this method, we get the exact count
-    def get_leaves(self, node: 'OctreeNode', block_id: int, resource_type: str = None, count: Optional[int] = None) -> List['OctreeNode']:
+    def get_leavesB(self, node: 'OctreeNode', block_id: int, resource_type: str = None, count: Optional[int] = None) -> List['OctreeNode']:
         """
         Get all the leaf nodes of an OctreeNode with a specified block_id and, optionally, a specified resource type.
 
@@ -619,6 +731,47 @@ class CustomOctree:
             leaf_nodes = leaf_nodes[:count]
 
         return leaf_nodes
+    
+    def get_leaves(self, node: 'OctreeNode', block_id: Optional[Union[int, List[int]]] = None, resource_type: Optional[Union[str, List[str]]] = None, count: Optional[int] = None) -> List['OctreeNode']:
+        """
+        Get all the leaf nodes of an OctreeNode with specified block_ids and, optionally, specified resource types.
+
+        Args:
+            node (OctreeNode): The OctreeNode to get the leaf nodes from.
+            block_id (Union[int, List[int]], optional): The ID(s) of the block to restrict the search to. If None, return all nodes. Default is None.
+            resource_type (Union[str, List[str]], optional): If specified, only return nodes containing these resource types. If None, return all nodes. Default is None.
+            count (int, optional): If specified, only return up to this number of nodes. If None, return all nodes. Default is None.
+
+        Returns:
+            List[OctreeNode]: The list of leaf nodes.
+        """
+        # Ensure block_id and resource_type are lists, even if only one id/type is provided
+        block_id = [block_id] if isinstance(block_id, int) else block_id
+        resource_type = [resource_type] if isinstance(resource_type, str) else resource_type
+
+        leaf_nodes = []
+        stack = [node]
+
+        while stack and (count is None or len(leaf_nodes) < count):
+            current_node = stack.pop()
+
+            if block_id is None or any(id in current_node.block_ids for id in block_id):  # Check if any block_id is in the list of block_ids of the current_node
+                if resource_type is None or any(type in current_node.resource_types for type in resource_type):
+                    # If the current_node is a leaf, append it to the list
+                    if not current_node.children:
+                        leaf_nodes.append(current_node)
+                        continue
+
+                    # If the current_node is not a leaf, add its children to the stack
+                    stack.extend(current_node.children)
+
+        # If more than count nodes were added, trim the list down to size
+        if count is not None and len(leaf_nodes) > count:
+            leaf_nodes = leaf_nodes[:count]
+
+        return leaf_nodes
+
+
     
     def find_lowest_common_ancestor_of_block(self, block_id: int, node: Optional['OctreeNode'] = None) -> Optional['OctreeNode']:
         """
@@ -824,8 +977,8 @@ class CustomOctree:
         #print positions_single_block, sizes_single_block, blockId_indices with a tab seperating each value
         print(f'positions_single_block is: {positions_single_block} \n sizes_single_block is: {sizes_single_block} \n colourScalar is: {colourScalar}')
 
-        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=True, line_width=2, cmap='tab10')
-        glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=False, line_width=5, cmap='tab10')
+        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=True, line_width=2, cmap='tab10')
+        #glyphmapping.add_glyphs_to_visualiser(positions_single_block, sizes_single_block, colourScalar, solid=False, line_width=5, cmap='tab10')
 
         
         #VISUALISE SELECT BLOCKIDS AS OUTLINE CUBES
@@ -861,6 +1014,17 @@ class CustomOctree:
 
         # Add glyphs to the visualiser with the dominant colors
         glyphmapping.add_voxels_with_rgba_to_visualiser(positions_leaf, sizes_leaf, colors_leaf)
+
+
+        ##add special ones
+        special_resources = ['hollows', 'epiphytes']
+        largerVoxels = self.get_leaves(self.root, resource_type = special_resources)
+        largerPos = np.array([node.center for node in largerVoxels])
+        largerCols = np.array([node.get_colors()[1] for node in largerVoxels])
+        glyphmapping.add_point_cloud_to_visualiserB(largerPos, largerCols, 20)
+        
+
+
 
         # Show the glyphs using pyvista
         glyphmapping.plot()

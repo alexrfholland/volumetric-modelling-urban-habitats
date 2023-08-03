@@ -17,17 +17,18 @@ from . import block_info
 # Global block metadata dictionary
 block_metadata = {}
 
-def populate_block_metadata(block_id, _type, mid_point=None, size=None, control=None):
+def populate_block_metadata(block_id, _type, location=None, size=None, control=None):
     global block_metadata
 
     # Populate the block metadata dictionary
-    # Note: You'll need to replace this with your actual logic for populating the metadata
     block_metadata[block_id] = {
-        'mid_point': mid_point,
+        'location': location,
         'size': size,
         'control': control,
         'type' : _type
     }
+
+    print(f'Populated block metadata for block {block_id} with location {location}, size {size}, control {control}, and type {_type}')
 
 def generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttributes):
     """
@@ -83,6 +84,6 @@ def update_tree_attributes(octree):
         print(f"stats for block {id} of size {block_metadata[id]['size']} and control {block_metadata[id]['control']} are {resourceStats}")
 
         # Distribute the changes in the octree
-        block_inserter.distribute_changes_across_resources(octree, resourceStats, id, 1)
+        block_inserter.distribute_changes_across_resources(octree, resourceStats, id, 1, block_metadata)
 
     return octree

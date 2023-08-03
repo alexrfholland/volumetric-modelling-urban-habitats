@@ -47,6 +47,9 @@ glyphs_to_plot = []
 # 3) If 'cmap' is not 'rgb' and 'sizes' is not in the point data of the glyphs, then the glyphs are added without 
 # any scalar coloring.
 
+#plotter
+p = pv.Plotter()
+
 
 def add_glyphs_to_visualiser(positions, sizes, color_scalar, solid=True, line_width=1.0, cmap='rainbow'):
     cube = pv.Cube() if solid else pv.Cube().outline()
@@ -96,7 +99,7 @@ def add_point_cloud_to_visualiser(positions, sizes, colors):
     glyphs_to_plot.append(settings)
 
 def plot():
-    p = pv.Plotter()
+    global p
     p.add_light(pv.Light(position=(2, 2, 0), focal_point=(0, 0, 0), intensity=.7))
     light2 = pv.Light(light_type='cameralight', intensity=.5)
     light2.specular = 0.5  # Reduced specular reflection
@@ -135,6 +138,11 @@ def plot():
     p.enable_eye_dome_lighting()
     p.show()
 
+def add_point_cloud_to_visualiserB(points, colors, _size):    
+    global p
+    colors = np.concatenate([colors, np.ones((colors.shape[0], 1))], axis=1)  
+    p.add_points(points, scalars=colors, point_size=_size, render_points_as_spheres=True, rgba=True)
+
 
 
 def main():
@@ -147,13 +155,27 @@ def main():
 
 
     # Add glyphs using the add_glyphs_to_visualiser function
-    add_glyphs_to_visualiser(positions, sizes, color_scalars, solid=False, line_width=20, cmap='viridis')
-    #add_voxels_with_rgba_to_visualiser(positions, sizes, colors)
+    #add_glyphs_to_visualiser(positions, sizes, color_scalars, solid=False, line_width=20, cmap='viridis')
+    add_voxels_with_rgba_to_visualiser(positions, sizes, colors)
     #add_point_cloud_to_visualiser(positions, sizes, colors)
+    
     
   
 
     plot()
+        
+
+
+def main2():
+    num_points = 10000
+    
+    positions = np.random.rand(num_points, 3) * 5
+    colors = np.ones((num_points, 3)) * [1, 0, 0]  # red colors
+    add_point_cloud_to_visualiserB(positions, colors, 20)
+    p.show()
+    p.reset_camera()
+
+
 
 if __name__ == '__main__':
     main()
