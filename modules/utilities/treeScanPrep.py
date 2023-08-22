@@ -6,7 +6,7 @@ df = pd.read_csv('data/branchPredictions - full.csv')
 
 # conditions to categorize branches
 conditions = [
-    (df['Branch.type'] == 'dead')
+    (df['Branch.type'] == 'dead branches')
 ]
 
 # corresponding categories

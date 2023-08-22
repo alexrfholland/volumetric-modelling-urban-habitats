@@ -155,13 +155,10 @@ except ImportError:
     import glyphmapping  # Fall back to an absolute import
 
 print("start")
-from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 
 from collections import Counter
 
-
-import pyvista as pv
 
 
 class OctreeNode:
@@ -286,19 +283,19 @@ class OctreeNode:
 
         if self.resource_types:
             # Get the type from the attributes list
-            print(self.resource_types)
             dominant_attribute = self.resource_types[0]
 
-            if self.resource_types[0] == 'fallen logs':
-                print(f'fallen logs coloured')
-
+            if len(self.resource_types) > 1:
+                print(f'node has multiple resource types {self.resource_types}')
 
             attribute_color_map = {
                 'isNeither': (0.8, 0.8, 0.8),  # Light gray
-                'isLateralOnly': (0.2, 0.2, 0.2),  # Darker gray
+                'lateral branch': (0.2, 0.2, 0.2),  # Darker gray
                 'peeling bark': (0.267004, 0.004874, 0.329415),  # Moderate intensity, deep purple
-                'isDeadOnly': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
-                'dead branches': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
+                'dead branches': (0.20803, 0.718701, 0.472873),  # Light intensity, bright green
+                'perch branch': (0.993248, 0.906157, 0.143936),  # High intensity, bright yellow
+
+                'branch': (.9, .9, .9),
 
                 # Vivid colors
                 'hollows': (1, 0, 1),  # Vivid pink
@@ -354,9 +351,6 @@ class OctreeNode:
 
             return dominant_attribute, dominant_color, dominant_color
         
-    
-
-
         else:
             print (f'node has no attributes')
             return 'No Attributes', (0, 0, 0), (0, 0, 0)
@@ -533,6 +527,7 @@ class CustomOctree:
             node.resource_types.append(resource_type)
             node = node.parent
     
+    #TODO: fix this (but it might be working?)
     def change_block_ids_and_resource_types(self, node, block_id_from=None, resource_type_from=None, block_id_to=None, resource_type_to=None):
         while node is not None:
             # If block_id_from is not None, remove it from the list
@@ -1019,9 +1014,10 @@ class CustomOctree:
         ##add special ones
         special_resources = ['hollows', 'epiphytes']
         largerVoxels = self.get_leaves(self.root, resource_type = special_resources)
-        largerPos = np.array([node.center for node in largerVoxels])
-        largerCols = np.array([node.get_colors()[1] for node in largerVoxels])
-        glyphmapping.add_point_cloud_to_visualiserB(largerPos, largerCols, 20)
+        if largerVoxels:
+            largerPos = np.array([node.center for node in largerVoxels])
+            largerCols = np.array([node.get_colors()[1] for node in largerVoxels])
+            glyphmapping.add_point_cloud_to_visualiserB(largerPos, largerCols, 20)
         
 
 

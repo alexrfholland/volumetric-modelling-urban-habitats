@@ -30,4 +30,5 @@ print(translated_df)
 #parquet_file = 'data/sites/park.parquet'  # Replace with your desired file path
 #translated_df.to_parquet(parquet_file)
 
+
 print("Conversion to Parquet completed!")

@@ -13,6 +13,7 @@
 from . import block_inserter
 from . import urbanforestparser as UrbanForestParser
 from . import block_info
+import logging
 
 # Global block metadata dictionary
 block_metadata = {}
@@ -29,6 +30,24 @@ def populate_block_metadata(block_id, _type, location=None, size=None, control=N
     }
 
     print(f'Populated block metadata for block {block_id} with location {location}, size {size}, control {control}, and type {_type}')
+
+def log_stats(block_id, amount, column, resource_type=None):
+    global block_metadata
+    print(block_metadata[block_id])
+    
+    # Get the DataFrame for the specific block ID
+    resource_log_df = block_metadata[block_id]['resource log']
+
+    if resource_type is None:
+        resource_log_df[column] = amount
+    
+    else:
+        # Find the row index corresponding to the resource named in resource_type_to
+        row_index = resource_log_df[resource_log_df['Attribute'] == resource_type].index[0]
+
+        # Update the 'total nodes' value for the identified row
+        resource_log_df.loc[row_index, column] = amount
+
 
 def generate_tree_blocks_and_insert_to_octree(octree, ground_points, treeAttributes):
     """
@@ -79,11 +98,25 @@ def update_tree_attributes(octree):
     # For each block in the octree
     for id in tree_block_ids:
         # Calculate the number of nodes to update
-        #resourceStats = block_info.calculate_leaf_nodes(sizeList[i], 'minimal')
-        resourceStats = block_info.calculate_leaf_nodes(block_metadata[id]['size'], block_metadata[id]['control'])
-        print(f"stats for block {id} of size {block_metadata[id]['size']} and control {block_metadata[id]['control']} are {resourceStats}")
+        size = block_metadata[id]['size']
+
+        if size == 'medium':
+            size = 'large'
+            
+        control = block_metadata[id]['control']
+        resourceStats = block_info.calculate_leaf_nodes(size, control)
+
+        block_metadata[id]['resource log'] = resourceStats
 
         # Distribute the changes in the octree
-        block_inserter.distribute_changes_across_resources(octree, resourceStats, id, 1, block_metadata)
+        block_inserter.distribute_changes_across_resources(octree, resourceStats, id, 1, block_metadata, log_stats)
+
+        print(f'log stats for block {id} of size {size} and control {control} are \n{block_metadata[id]["resource log"]}')
+
+        print(f'Updated block {id} with additional attributes')
+
+        print(f'changing angles for tree block {id}')
+        block_inserter.changeAngles(octree, id)
 
     return octree
+

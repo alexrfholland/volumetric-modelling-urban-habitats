@@ -1,43 +1,19 @@
 '''
 
 CHATGPT - ALWAYS REVIEW THIS SO YOU KNOW THE AIM AND OVERALL STEPS
-The code provided is intended for 3D volumetric modeling of urban environments using an Octree data structure. The goal is to build a detailed representation of urban spaces by grouping Octree nodes into logical sets called Blocks, such as Tree Blocks, Building Blocks, and Artificial Habitat Blocks. Each Block represents a specific object or area within the environment.
-
-The key components are:
-- OctreeNode class: Represents individual nodes in the Octree.
-- CustomOctree class: Represents the Octree data structure with methods for creating bounding boxes and voxel grids.
-- OctreeVisualizer class: Visualizes the Octree in 3D using Open3D.
-- BoundingBoxToLineSet class: Converts bounding boxes into line sets for visualization.
-- Blocks: Logical grouping of Octree nodes representing objects (trees, buildings, etc.)
-- Node-Block Association: Nodes can be associated with one or multiple blocks.
-
-
-The main steps involved are:
-1. Define classes for Octree nodes and the Octree data structure.
-2. Modify OctreeNode class to include an attribute for tracking associated Block identifiers.
-3. Define a data structure for storing information about each Block.
-4. Implement methods to associate nodes with the appropriate Blocks during insertion into the Octree.
-5. Query nodes and Blocks based on specific criteria such as depth levels and Block identifiers.
-6. Visualize the Octree and Blocks.
-
-
-
-Oct tree structure: 
+Aim: 
 The purpose of this script is to construct an octree from a 3D point cloud and to provide visualizations of the octree in the form of voxelized point clouds and bounding boxes.
 
 Key Steps:
 1. Load Point Cloud Data:
     - Use pandas to load CSV data into a DataFrame.
     - Extract 3D point coordinates and attributes from the DataFrame.
-    - define a Block grouping for each urban element we load data for
 
 2. Construct a Custom Octree:
-    - initialise a dictionary that has a block id and block-level attributes associated with each block
     - Initialize a root node of the octree with the minimum and maximum corners of the point cloud.
     - Recursively split the root node into eight children based on the midpoint of the parent's bounding box.
-    - For each node, associate block ids with it (ie. the block id that points below to. note:  Nodes can be associated with one or multiple blocks)
     - Continue this process until a specified maximum depth is reached.
-    -Upon initialization of each node, determine the dominant attribute based on the distribution of attributes within that node (the most common node attribute of leaf nodes within this node).
+    -Upon initialization of each node, determine the dominant attribute based on the distribution of attributes within that node.
     -Use the determined dominant attribute to calculate and store the dominant color in each node.
 
 3. Generate Voxel Grid from Octree's Leaf Nodes:
@@ -46,7 +22,7 @@ Key Steps:
     - Convert the point cloud into a voxel grid using Open3D's VoxelGrid class.
 
 4. Generate Bounding Boxes for Octree Nodes:
-    - Traverse the octree, and collect nodes in levels within the minimum and maximum offset values. For each node within this offset, create a bounding box.
+    - Traverse the octree, and for each node, create a bounding box.
     - Assign a color to each bounding box based on the node's dominant attribute.
     - Save these bounding boxes for later visualization.
 
@@ -54,24 +30,8 @@ Key Steps:
     - Create a visualizer object using Open3D.
     - Add the voxel grid and bounding boxes to the visualizer.
     -Convert these bounding boxes into mesh lines, enabling customization of the width.
-    - convert the voxel grid into meshes and compute mesh normals
     - Run the visualizer and enable interactions with keyboard callbacks.
-
-Implementation Details for Proposed Block-Based Structure:
-
-The aim is to integrate a block-based structure into the Octree. A Block refers to a logical grouping of Octree nodes that collectively represent a specific object or area within the environment. The primary types of Blocks considered are Tree Blocks, Building Blocks, and Artificial Habitat Blocks.
-
-Key Steps:
-
-1. Modify OctreeNode Class: Add a block_ids attribute to the OctreeNode class to keep track of Block identifiers associated with each node. 
-This attribute holds a list of identifiers of the Blocks that the node belongs to.
-2.Define Block Information Storage: Create a separate data structure, such as a dictionary, to store information about each Block. The information can include things like the type of Block (tree, building, artificial habitat), the minimum and maximum depths at which the Block exists, and other Block-specific attributes.
-3.Implement Node-Block Association during Insertion: When inserting nodes into the Octree, associate them with the appropriate Block(s) by adding the Block identifier(s) to the node's block_ids list.
-4.Implement Querying Functions: Implement functions that allow querying nodes and Blocks based on specific criteria, such as depth levels and Block identifiers.
-5.Implement Visualization Methods: Implement visualization methods to visualize Blocks within the Octree. Different colors or styles could be used to distinguish different types of Blocks (e.g., trees vs. buildings).        
 '''
-
-
 
 
 
@@ -81,8 +41,11 @@ import open3d as o3d
 import numpy as np
 import pandas as pd
 
-from BoundingBoxToLineSet import BoundingBoxToLineSet
+from ss.BoundingBoxToLineSet import BoundingBoxToLineSet
 
+
+
+##this one is using draw (which works with  line widths)
 
 class OctreeNode:
     def __init__(self, min_corner, max_corner, points, attributes, depth=0):
@@ -152,17 +115,14 @@ class CustomOctree:
                          "isNeither": [1, 1, 1]}
         return color_mapping[attribute]
 
-    def get_all_bounding_boxes(self, node, boxes, min_offset_level, max_offset_level):
+    def get_all_bounding_boxes(self, node, boxes):
         if node is None:
             return
-        # Check if the current depth is within the specified range
-        if min_offset_level <= node.depth <= max_offset_level:
-            boxes.append(node.bounding_box)
+        boxes.append(node.bounding_box)
 
         # Recurse for children
         for child in node.children:
-            self.get_all_bounding_boxes(child, boxes, min_offset_level, max_offset_level)
-
+            self.get_all_bounding_boxes(child, boxes)
 
     def get_voxels_from_leaf_nodes(self, node, voxel_points, voxel_colors, max_depth):
         if node is None:
@@ -178,16 +138,15 @@ class CustomOctree:
         for child in node.children:
             self.get_voxels_from_leaf_nodes(child, voxel_points, voxel_colors, max_depth)
 
-    def getMeshesfromVoxels(self, max_depth, min_offset_level, max_offset_level):
+    def getMeshesfromVoxels(self, max_depth):
         voxel_points = []  
         voxel_colors = []  
         bounding_boxes = []
 
-        # Gather all the points and colors from the octree
+        #gather all the points and colors from the octree
         self.get_voxels_from_leaf_nodes(self.root, voxel_points, voxel_colors, max_depth)
-        
-        # Gather all the bounding boxes from the octree within the specified depth range
-        self.get_all_bounding_boxes(self.root, bounding_boxes, min_offset_level, max_offset_level)
+        #gather all the bounding boxes from the octree
+        self.get_all_bounding_boxes(self.root, bounding_boxes)
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(np.array(voxel_points))
@@ -200,25 +159,21 @@ class CustomOctree:
 
 
 
-def update_visualization(vis, octree, max_depth, min_offset_level, max_offset_level):
-    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth, min_offset_level, max_offset_level)
+def update_visualization(octree, max_depth):
+    voxel_grid, bounding_boxes = octree.getMeshesfromVoxels(max_depth)
 
-    view_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
-
-    vis.clear_geometries()
-    vis.add_geometry(voxel_grid)
-
-    # Convert bounding boxes to line sets before adding them to the visualizer
+    # Convert bounding boxes to line sets
     converter = BoundingBoxToLineSet(bounding_boxes, line_width=100)  # Initialize with bounding_boxes
     linesets = converter.to_linesets()
 
-    # Adding linesets to the visualizer
-    for lineset_info in linesets:
-        # Assuming the geometry is in 'geometry' key and material in 'material' key of lineset_info
-        vis.add_geometry(lineset_info['geometry'])
+    geometries = []
+    geometries.append(voxel_grid)
 
-    vis.get_view_control().set_lookat(octree.root.center)
-    vis.get_view_control().convert_from_pinhole_camera_parameters(view_params)
+    # Adding linesets to the geometries list
+    for lineset_info in linesets:
+        geometries.append(lineset_info['geometry'])
+
+    o3d.visualization.draw_geometries(geometries)
 
 csv_file = 'data/branchPredictions - full.csv'
 data = pd.read_csv(csv_file)
@@ -228,27 +183,19 @@ points = tree13_data[['x', 'y', 'z']].to_numpy()
 attributes = tree13_data[['isDeadOnly', 'isLateralOnly', 'isBoth', 'isNeither']].to_dict('records')
 
 center = np.mean(points, axis=0)
-max_depth = 5
+max_depth = 3
 
 min_corner = np.min(points, axis=0)
 max_corner = np.max(points, axis=0)
 octree = CustomOctree(min_corner, max_corner, points, attributes, max_depth=max_depth)
 
-
-vis = o3d.visualization.Visualizer()
-vis.create_window()
-
-#update_visualization(vis, octree, max_depth, 1, max_depth - 3)
-update_visualization(vis, octree, max_depth, 2, 3)
+update_visualization(octree, max_depth)
 
 
 
-vis.run()
-vis.destroy_window()
 
-
+##this one is using the visualizer
 """
-
 class OctreeNode:
     def __init__(self, min_corner, max_corner, points, attributes, depth=0):
         self.children = []  # child nodes
@@ -403,3 +350,4 @@ update_visualization(vis, octree, max_depth)
 vis.run()
 vis.destroy_window()
 """
+

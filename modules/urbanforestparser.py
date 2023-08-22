@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.spatial import KDTree
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 
 
@@ -73,7 +73,7 @@ def find_z_points(points, ground_points):
 def convert_to_np_format(ground_points):
     return np.array(ground_points)
 
-
+"""
 def main():
     
     # Test bounding box
@@ -95,4 +95,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()"""

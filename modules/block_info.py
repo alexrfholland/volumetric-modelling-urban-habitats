@@ -24,7 +24,7 @@ def generate_tree_blocks(df, populate_block_metadata):
         block_data['z'] += translation_z
 
         # Add control level
-        block_data['control'] = 'low'
+        #block_data['control'] = 'minimal' #use the block metadata dictionary instead
 
         tree_block_count = tree_block_count + 1
         print(f'tree_block_count is: {tree_block_count}')
@@ -36,16 +36,18 @@ def generate_tree_blocks(df, populate_block_metadata):
 
     def get_tree_ids(tree_size, count):
         tree_id_ranges = {'small': range(0, 5), 'medium': range(10, 17), 'large': range(10, 17)}
+        #tree_id_ranges = {'small': range(0, 5), 'medium': range(5, 10), 'large': range(10, 17)}
+
 
         print(f'count is: {count}')
         return random.choices(tree_id_ranges[tree_size], k=count)
 
     def define_attributes(combined_data):
         #extract the data from these columns
-        attributes = combined_data[['Branch.type', 'Branch.angle', 'Tree.size', 'type', 'control']].to_dict('records')
+        attributes = combined_data[['Branch.type', 'Branch.angle', 'Tree.size', 'type']].to_dict('records')
         return attributes
 
-    csv_file = 'data/edited_branchPredictions - adjusted.csv'
+    csv_file = 'data/branchPredictions - adjusted.csv'
 
     data = pd.read_csv(csv_file)
     print(f"Loaded data with shape {data.shape}")

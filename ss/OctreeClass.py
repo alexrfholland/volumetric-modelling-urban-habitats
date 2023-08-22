@@ -113,7 +113,7 @@ import pandas as pd
 import random
 
 
-from BoundingBoxToLineSet import BoundingBoxToLineSet
+from ss.BoundingBoxToLineSet import BoundingBoxToLineSet
 
 
 class OctreeNode:
