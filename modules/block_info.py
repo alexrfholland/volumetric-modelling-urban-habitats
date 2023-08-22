@@ -120,6 +120,14 @@ def calculate_leaf_nodes(tree_size: str, control_level: str) -> pd.DataFrame:
                       '% of litter cover (10 m radius of tree)': 'leaf litter',
                       'Number of fallen logs (> 10 cm DBH 10 m radius of tree)': 'fallen logs'}
     
+    reversed_dict = {value: key for key, value in attribute_dict.items()}
+
+    # Print the reversed dictionary
+    for key, value in reversed_dict.items():
+        print(f"{key}: {value}")
+    
+    df['types'] = df['Attribute']
+    
     # Replace attribute names in DataFrame
     df['Attribute'] = df['Attribute'].replace(attribute_dict)
 
@@ -164,9 +172,10 @@ def calculate_leaf_nodes(tree_size: str, control_level: str) -> pd.DataFrame:
         results = pd.concat([results, pd.DataFrame({'Attribute': [attribute], 'Control Level': [control], 
                                                     'Leaf Nodes (Low)': [leaf_nodes_low], 
                                                     'Leaf Nodes (High)': [leaf_nodes_high], 
-                                                    'Leaf Nodes (Random)': [leaf_nodes_random]})], ignore_index=True)
+                                                    'Leaf Nodes (Random)': [leaf_nodes_random],
+                                                    'type' : [reversed_dict[attribute]]})], ignore_index=True)
     
-    results = results[['Attribute', 'Control Level', 'Leaf Nodes (Low)', 'Leaf Nodes (High)', 'Leaf Nodes (Random)']]
+    results = results[['Attribute', 'Control Level', 'Leaf Nodes (Low)', 'Leaf Nodes (High)', 'Leaf Nodes (Random)', 'type']]
     return results
 
 # Usage

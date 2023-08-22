@@ -91,6 +91,7 @@ def update_tree_attributes(octree):
     Returns:
     octree (CustomOctree): The updated octree object.
     """
+    global block_metadata
 
     # Extract all block ids where type is 'tree'
     tree_block_ids = [block_id for block_id, metadata in block_metadata.items() if metadata['type'] == 'tree']
@@ -116,7 +117,38 @@ def update_tree_attributes(octree):
         print(f'Updated block {id} with additional attributes')
 
         print(f'changing angles for tree block {id}')
-        block_inserter.changeAngles(octree, id)
+        #block_inserter.changeAngles(octree, id)
 
     return octree
+
+def confirm_tree_attributes(octree):
+    # Get all leaf nodes
+    leaves = octree.get_leaves(octree.root)
+
+    # Get list of ids of trees
+    tree_ids = [key for key, value in block_metadata.items() if value['type'] == 'tree']
+
+    # Partition leaves by block_ids using tree_ids
+    partitioned_leaves = {block_id: [] for block_id in tree_ids}
+    for leaf in leaves:
+        for block_id in leaf.block_ids:
+            if block_id in partitioned_leaves:
+                partitioned_leaves[block_id].append(leaf)
+
+    for id in tree_ids:
+        resourcelog = block_metadata[id]['resource log']
+
+        # Add a new column for Found Totals, initialize with zeros
+        resourcelog['Found Totals'] = 0
+
+        for index, row in resourcelog.iterrows():
+            resource_type = row['Attribute']
+
+            # Count the number of leaf nodes that have the resource_type in their resource_types and have the specific id
+            count = sum(resource_type in leaf.resource_types for leaf in partitioned_leaves[id])
+
+            # Add that value to the column of the row of the resource_type
+            resourcelog.loc[index, 'Found Totals'] = count
+
+        print(f'FINAL log stats for block {id} of size {block_metadata[id]["size"]} and control {block_metadata[id]["control"]} are \n{block_metadata[id]["resource log"]}')
 

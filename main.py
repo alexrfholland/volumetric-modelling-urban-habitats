@@ -75,6 +75,10 @@ print("starting to change attributes")
 octree = blocks.update_tree_attributes(octree)
 print("finished changing attributes")
 
+
 #4. Visualise octree
 print("visualizing octree")
 octree.visualize_octree_nodes()
+
+#confirm
+blocks.confirm_tree_attributes(octree)

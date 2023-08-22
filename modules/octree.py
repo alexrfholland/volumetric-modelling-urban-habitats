@@ -690,42 +690,7 @@ class CustomOctree:
 
         return leaf_nodes
     
-    
-    #with this method, we get the exact count
-    def get_leavesB(self, node: 'OctreeNode', block_id: int, resource_type: str = None, count: Optional[int] = None) -> List['OctreeNode']:
-        """
-        Get all the leaf nodes of an OctreeNode with a specified block_id and, optionally, a specified resource type.
-
-        Args:
-            node (OctreeNode): The OctreeNode to get the leaf nodes from.
-            block_id (int): The ID of the block to restrict the search to.
-            resource_type (str, optional): If specified, only return nodes containing this resource type. If None, return all nodes. Default is None.
-            count (int, optional): If specified, only return up to this number of nodes. If None, return all nodes. Default is None.
-
-        Returns:
-            List[OctreeNode]: The list of leaf nodes.
-        """
-        leaf_nodes = []
-        stack = [node]
-
-        while stack and (count is None or len(leaf_nodes) < count):
-            current_node = stack.pop()
-
-            if block_id in current_node.block_ids:  # Check if block_id is in the list of block_ids of the current_node
-                if resource_type is None or resource_type in current_node.resource_types:
-                    # If the current_node is a leaf, append it to the list
-                    if not current_node.children:
-                        leaf_nodes.append(current_node)
-                        continue
-
-                    # If the current_node is not a leaf, add its children to the stack
-                    stack.extend(current_node.children)
-
-        # If more than count nodes were added, trim the list down to size
-        if count is not None and len(leaf_nodes) > count:
-            leaf_nodes = leaf_nodes[:count]
-
-        return leaf_nodes
+ 
     
     def get_leaves(self, node: 'OctreeNode', block_id: Optional[Union[int, List[int]]] = None, resource_type: Optional[Union[str, List[str]]] = None, count: Optional[int] = None) -> List['OctreeNode']:
         """
